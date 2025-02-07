@@ -65,14 +65,8 @@ class _GameScreenState extends State<GameScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error refreshing game state: $e')),
         );
-    final state = await contractInterface.getGameState();
-    final address = await ethereum!.requestAccount();
-    final player = await contractInterface.getPlayerInfo(address[0]);
-    
-    setState(() {
-      gameState = state;
-      playerInfo = player;
-    });
+      }
+    }
   }
 
   Widget _buildGamePhaseInfo() {
