@@ -1,0 +1,23 @@
+Description:
+
+
+
+
+Detailed documentation:
+
+Notation: session identifier sid, set of parties {P1, . . . , Pn}, initial deposit vector
+d1 = · · · dn = (n − 1)q, where q is the penalty amount, a program Prog, an initial
+state st, and a validation function for updates Update. During the execution phase,
+parties will be able to add coins via Update.
+Initialization phase: Wait to get (init, sid, ssid, Prog, Update, st, dj , coins(dj ))
+from each Pj . Initialize Q ← ∑
+j∈[n] dj .
+Execution phase: Repeat until termination:
+– If a message (update, sid, ssid, u, b, coins(b)) is received from Pj at time t
+such that Update(j, w, t; st) 6 = ⊥, then set (Prog, Update, st) ← Update(j, u,
+t; Prog, st), accept coins(b), update Q ← Q + bj , and send (update, sid, ssid,
+j, u, t, st, Prog, Update) to all parties.
+– If a message (trigger, sid, ssid, w) is received from Pj at time t such that
+Prog(j, w, t; st) 6 = ⊥. Then, let (st, e) ← Prog(j, w, t; st). If e < Q, then send
+(output, sid, ssid, j, w, t, st, e) to each Pk and send (pay, sid, ssid, coins(e)) to
+Pj . Update Q ← Q − e. If Q = 0, then terminate.

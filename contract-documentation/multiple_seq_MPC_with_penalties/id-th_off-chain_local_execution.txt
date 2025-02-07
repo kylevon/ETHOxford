@@ -1,0 +1,47 @@
+1. (Adding new coins) If some party Pj wants to add coins(bj ) to F∗
+StCon+, then it
+sends b′ ← b + (· · · , 0, bj , 0, · · · ) to all parties. Each party Pk then generates a
+signature ψ′
+k ← Sign(id, b′) and broadcasts it. If Pj receives signatures from all
+parties, then Pj sends u = (update, b′, ψ, coins(bj )) to F∗
+StCon+. Other parties
+wait to receive notification from F∗
+StCon+ of the updated balance. If either (1)
+Pj did not obtain signatures from other parties; or (2) the remaining parties
+did not receive notification from F∗
+StCon+, then all honest parties go to the
+on-chain contract with the intention of exiting the contract. See Figure 13.
+On the other hand, if the above step was successfully completed, then parties
+update b ← b′ and execute the next step.
+2. (Parameter agreement) Initialize transcript tt = ⊥. Parties agree on the
+reactive function g(id) = {g(id)
+k }k to be executed next. Parties also agree on a
+specific MPC protocol π using which they will securely compute g(id). Let the
+transcript verification predicate for this reactive MPC protocol be denoted by
+tv(id). We use |tv(id)| to denote the number of messages in a valid transcript that
+corresponds to a completed execution of g(id). Once they agree on tv(id), each Pj
+computes σ′
+j ← Sign((id, tv(id), b); skj ) and broadcasts this value to all parties.
+Each party sets σ(id) = (σ′
+1, . . . , σ′
+n). If not all signatures were obtained, then
+parties stop the local execution and go to the on-chain contract for resolution.
+Else each party Pj updates bestj ← (transcript, id, ⊥, tv(id), b, σ(id))
+3. (Reactive MPC execution) Parse g(id) = {g(id)
+k }k∈[ρ]. For k = 1, . . . , ρ:
+– Let r(id)
+k denote the number of rounds in a standard (unfair) MPC protocol
+that implements g(id)
+k . We denote party Pj ’s inputs to g(id)
+k by yj and the
+corresponding randomness by ωj . For r = 1, . . . , r(id)
+k sequentially:
+• Let j = r mod n. Party Pj computes its next message (mr , σr ) ←
+nmf(tt; (yj , ωj , b, skj )), and broadcasts (mr , σr ) to all parties.
+• If no message was received, then parties abort the local execution and go to the on-chain contract for resolution. Else, each
+Pj updates the transcript tt ← tt‖(mr , σr ) and sets bestj ←
+(transcript, id, tt, tv(id), b′, σ).
+– Parties compute the output of g(id)
+k using the completed transcript tt.
+Note that this output specifies the new balance vector b′. Parties update
+b ← b′.
