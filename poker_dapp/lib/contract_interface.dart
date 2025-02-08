@@ -35,7 +35,7 @@ class ContractInterface {
       print('ABI functions:');
       final parsedAbi = ContractAbi.fromJson(jsonEncode(abi), 'PokerGame');
       for (var function in parsedAbi.functions) {
-        print('- ${function.name}');
+        print('- ${function.name} (${function.type})');
       }
 
       // Create contract instance
@@ -43,6 +43,12 @@ class ContractInterface {
         parsedAbi,
         EthereumAddress.fromHex(Config.contractAddress),
       );
+
+      // Print all available functions in the contract instance
+      print('\nContract functions:');
+      for (var function in contract!.functions) {
+        print('- ${function.name} (${function.type})');
+      }
 
       // Get credentials from private key
       credentials = EthPrivateKey.fromHex(privateKey);
@@ -132,13 +138,15 @@ class ContractInterface {
 
   Future<int> getPlayerGameId(String address) async {
     try {
-      final function = contract!.function('getPlayerGameId');
+      final function = contract!.function('playerGameId');
       final result = await web3client!.call(
         contract: contract!,
         function: function,
         params: [EthereumAddress.fromHex(address)],
       );
-      return (result[0] as BigInt).toInt();
+      final gameId = result.isNotEmpty ? (result[0] as BigInt).toInt() : 0;
+      print('Player ${address} is in game: $gameId');
+      return gameId;
     } catch (e) {
       print('Error getting player game ID: $e');
       return 0;
@@ -206,29 +214,37 @@ class ContractInterface {
         throw Exception('Already in game');
       }
 
-      // Get current game ID
-      var gameId = await getCurrentGameId();
+      // Get current game ID and verify it
+      final gameId = await getCurrentGameId();
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
       print('Current game ID before join: $gameId');
       
-      // Get game state to check number of players
-      final function = contract!.function('games');
+      // Get game state to check phase
+      final gamesFunction = contract!.function('games');
       final result = await web3client!.call(
         contract: contract!,
-        function: function,
+        function: gamesFunction,
         params: [BigInt.from(gameId)],
       );
       
       print('Raw game state before joining: $result');
+      print('Attempting to join with address: ${currentAccount!}');
       
       // Check if the game exists and is in joining phase
       if (result.isEmpty) {
         throw Exception('Game not found');
       }
       
-      final phase = result[5] is BigInt ? (result[5] as BigInt).toInt() : 0;
+      final phase = result[4] is BigInt ? (result[4] as BigInt).toInt() : 0;
       if (phase != 0) { // 0 = Joining phase
         throw Exception('Game is not in joining phase');
       }
+      
+      // Get current first player if any
+      final currentFirstPlayer = result[6] as EthereumAddress;
+      print('Current first player in game: ${currentFirstPlayer.hex}');
       
       print('Joining game with ID: $gameId');
       print('Buy-in amount: $buyInAmount');
@@ -258,14 +274,43 @@ class ContractInterface {
       
       print('Successfully joined game with transaction hash: ${receipt.transactionHash}');
       
-      // Check game state after joining
-      await Future.delayed(const Duration(seconds: 2)); // Wait for state to update
-      final gameState = await getGameState();
-      print('Game state after joining:');
-      print('- Phase: ${await getPhaseText(gameState['phase'] as int)}');
-      print('- First Player: ${gameState['firstPlayer']}');
-      print('- Current Player: ${gameState['currentPlayer']}');
-      print('- Number of players: ${(gameState['players'] as List?)?.length ?? 0}');
+      // Wait for state to update and verify the phase has changed
+      int attempts = 0;
+      const maxAttempts = 10;
+      bool stateUpdated = false;
+      
+      while (attempts < maxAttempts && !stateUpdated) {
+        await Future.delayed(const Duration(seconds: 1));
+        
+        // Get player's game ID after joining
+        final playerGameId = await getPlayerGameId(currentAccount!);
+        print('Player game ID after joining: $playerGameId');
+        
+        final newGameState = await getGameState();
+        if (newGameState != null) {
+          final newPhase = newGameState['phase'] as int;
+          final newNumPlayers = newGameState['numPlayers'] as int;
+          final newFirstPlayer = newGameState['firstPlayer'] as EthereumAddress;
+          final isFirstPlayer = newGameState['isFirstPlayer'] as bool;
+          
+          print('Game state after joining (attempt ${attempts + 1}):');
+          print('- Game ID: $playerGameId');
+          print('- Phase: ${await getPhaseText(newPhase)}');
+          print('- Number of players: $newNumPlayers');
+          print('- First Player: ${newFirstPlayer.hex}');
+          print('- Am I first player? $isFirstPlayer');
+          
+          if (playerGameId > 0 && newNumPlayers > 0) {
+            stateUpdated = true;
+            break;
+          }
+        }
+        attempts++;
+      }
+      
+      if (!stateUpdated) {
+        print('Warning: Game state did not update after joining');
+      }
       
       return true;
     } catch (e) {
@@ -276,21 +321,44 @@ class ContractInterface {
 
   Future<bool> submitEncryptedDeck(List<int> encryptedDeck) async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
       final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+      print('Submitting encrypted deck for game $gameId: $encryptedDeck');
       final function = contract!.function('submitEncryptedDeck');
-      final result = await web3client!.sendTransaction(
+      
+      // Convert the list of ints to BigInts
+      final encryptedDeckBigInt = encryptedDeck.map((i) => BigInt.from(i)).toList();
+      
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [BigInt.from(gameId), encryptedDeck],
+          parameters: [BigInt.from(gameId), encryptedDeckBigInt],
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully submitted encrypted deck with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error submitting encrypted deck: $e');
-      return false;
+      throw Exception('Failed to submit encrypted deck: $e');
     }
   }
 
@@ -428,61 +496,109 @@ class ContractInterface {
     }
   }
 
-  Future<Map<String, dynamic>> getGameState() async {
+  Future<Map<String, dynamic>?> getGameState() async {
     try {
-      if (!isInitialized) {
-        throw Exception('Contract not initialized');
+      if (!isInitialized || currentAccount == null) {
+        print('Contract not initialized or no current account');
+        return null;
       }
-      
-      final gameId = await getPlayerGameId(currentAccount!);
-      print('Getting game state for game ID: $gameId');
-      
-      final function = contract!.function('games');
+
+      final playerGameId = await getPlayerGameId(currentAccount!);
+      print('Got game ID for ${currentAccount!}: $playerGameId');
+      if (playerGameId == 0) {
+        print('No active game found for ${currentAccount!}');
+        return null;
+      }
+
+      // Get game state using getGameState function
+      ContractFunction? gameStateFunction;
+      try {
+        // Try to find the function in the ABI
+        final abiString = await rootBundle.loadString('assets/PokerGame.json');
+        final abiJson = jsonDecode(abiString);
+        final abi = abiJson['abi'] as List<dynamic>;
+        
+        // Find the getGameState function in the ABI
+        final getGameStateAbi = abi.firstWhere(
+          (item) => item['type'] == 'function' && item['name'] == 'getGameState',
+          orElse: () => throw Exception('getGameState not found in ABI'),
+        );
+        
+        print('Found getGameState in ABI: ${jsonEncode(getGameStateAbi)}');
+        
+        // Create a new contract instance with this ABI
+        final parsedAbi = ContractAbi.fromJson(jsonEncode([getGameStateAbi]), 'PokerGame');
+        final tempContract = DeployedContract(
+          parsedAbi,
+          EthereumAddress.fromHex(Config.contractAddress),
+        );
+        
+        gameStateFunction = tempContract.function('getGameState');
+        print('Successfully created getGameState function');
+      } catch (e) {
+        print('Error finding getGameState function: $e');
+        print('Available functions:');
+        for (var function in contract!.functions) {
+          print('- ${function.name}');
+        }
+        return null;
+      }
+
+      print('Calling getGameState for game $playerGameId');
       final result = await web3client!.call(
         contract: contract!,
-        function: function,
-        params: [BigInt.from(gameId)],
+        function: gameStateFunction,
+        params: [BigInt.from(playerGameId)],
       );
 
-      print('Raw game state result: $result');
-
+      print('Raw result from getGameState: $result');
       if (result.isEmpty) {
-        throw Exception('No game state found');
+        print('Empty result from contract call');
+        return null;
       }
 
-      // The result array matches the struct fields in order
-      final gameState = {
-        'communityCards': result[0] is List ? result[0] as List : [],
-        'pot': result[1] is BigInt ? result[1] as BigInt : BigInt.zero,
-        'currentBet': result[2] is BigInt ? result[2] as BigInt : BigInt.zero,
-        'currentPlayer': result[3] is BigInt ? (result[3] as BigInt).toInt() : 0,
-        'roundDeadline': result[4] is BigInt ? result[4] as BigInt : BigInt.zero,
-        'phase': result[5] is BigInt ? (result[5] as BigInt).toInt() : 0,
-        'firstPlayer': result[6] is EthereumAddress ? result[6] as EthereumAddress : null,
-        'lastBetAmount': result[7] is BigInt ? result[7] as BigInt : BigInt.zero,
-        'communityCardsDealt': result[8] is BigInt ? (result[8] as BigInt).toInt() : 0,
-      };
+      final communityCards = result[0] as List<dynamic>;
+      final pot = result[1] as BigInt;
+      final currentBet = result[2] as BigInt;
+      final currentPlayer = (result[3] as BigInt).toInt();
+      final roundDeadline = result[4] as BigInt;
+      final phase = (result[5] as BigInt).toInt();
+      final firstPlayer = result[6] as EthereumAddress;
+      final lastBetAmount = result[7] as BigInt;
+      final communityCardsDealt = (result[8] as BigInt).toInt();
+      final numPlayers = (result[9] as BigInt).toInt();
 
-      print('Parsed game state:');
-      print('- Phase: ${await getPhaseText(gameState['phase'] as int)}');
-      if (gameState['firstPlayer'] != null) {
-        print('- First player: ${gameState['firstPlayer']}');
-      }
-      print('- Current player: ${gameState['currentPlayer']}');
-      
-      return gameState;
-    } catch (e) {
-      print('Error getting game state: $e');
+      // Use contract's isFirstPlayer function directly
+      final isFirstPlayerFunction = contract!.function('isFirstPlayer');
+      final isFirstPlayerResult = await web3client!.call(
+        contract: contract!,
+        function: isFirstPlayerFunction,
+        params: [EthereumAddress.fromHex(currentAccount!)],
+      );
+      final isFirstPlayer = isFirstPlayerResult[0] as bool;
+
+      print('First player in game $playerGameId: ${firstPlayer.hex}');
+      print('Current player (${currentAccount!}) is first player: $isFirstPlayer');
+      print('Number of players: $numPlayers');
+
       return {
-        'phase': 0,
-        'pot': BigInt.zero,
-        'currentBet': BigInt.zero,
-        'currentPlayer': 0,
-        'communityCards': [],
-        'firstPlayer': null,
-        'lastBetAmount': BigInt.zero,
-        'communityCardsDealt': 0,
+        'gameId': playerGameId,
+        'communityCards': communityCards,
+        'pot': pot,
+        'currentBet': currentBet,
+        'currentPlayer': currentPlayer,
+        'roundDeadline': roundDeadline,
+        'phase': phase,
+        'firstPlayer': firstPlayer,
+        'lastBetAmount': lastBetAmount,
+        'communityCardsDealt': communityCardsDealt,
+        'numPlayers': numPlayers,
+        'isFirstPlayer': isFirstPlayer
       };
+    } catch (e, stackTrace) {
+      print('Error getting game state: $e');
+      print('Stack trace: $stackTrace');
+      return null;
     }
   }
 
@@ -510,26 +626,11 @@ class ContractInterface {
   Future<int> getCurrentPhase() async {
     try {
       final gameState = await getGameState();
+      if (gameState == null) return 0;
       return gameState['phase'] as int;
     } catch (e) {
       print('Error getting current phase: $e');
       return 0; // Return Joining phase as default
-    }
-  }
-
-  Future<bool> isFirstPlayer() async {
-    try {
-      final gameState = await getGameState();
-      final firstPlayer = gameState['firstPlayer'];
-      
-      if (firstPlayer == null) return false;
-      
-      final isFirst = (firstPlayer as EthereumAddress).hex.toLowerCase() == currentAccount!.toLowerCase();
-      print('Is first player check: ${firstPlayer.hex} vs $currentAccount = $isFirst');
-      return isFirst;
-    } catch (e) {
-      print('Error checking if first player: $e');
-      return false;
     }
   }
 
