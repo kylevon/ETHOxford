@@ -75,6 +75,9 @@ contract MultiplayerPokerGame is IStateTransition {
     event CommitmentOpened(uint256 indexed id, uint256 indexed player, bytes opening);
     event HandRevealed(uint256 indexed id, uint256 indexed player, bytes encryptedHand);
 
+    // Events for debugging
+    event MoveValidation(uint8 moveType, uint256 amount, uint256 currentMax, uint256 playerBet);
+
     constructor(
         uint256 _n,
         uint256 _delta,
@@ -266,15 +269,18 @@ contract MultiplayerPokerGame is IStateTransition {
         // Check if it's the player's turn
         require(!game.folded[game.currentPlayer], "Player has folded");
 
+        uint256 currentMax = maxBet(game.bets);
+        uint256 playerBet = game.bets[game.currentPlayer];
+        
         if (moveType == 0) { // Check
-            // Can only check if no bets have been made
-            return game.bets[game.currentPlayer] == maxBet(game.bets);
+            // Can only check if current bet equals maximum bet
+            return playerBet == currentMax;
         }
         else if (moveType == 1) { // Bet
-            // Bet must be at least the current highest bet
-            uint256 currentMax = maxBet(game.bets);
-            return amount >= currentMax && 
-                   amount >= game.bets[game.currentPlayer] + BIG_BLIND;
+            // Bet must be strictly greater than the current highest bet
+            // and at least a big blind more than the player's current bet
+            return amount > currentMax && 
+                   amount >= playerBet + BIG_BLIND;
         }
         else if (moveType == 2) { // Fold
             return true;

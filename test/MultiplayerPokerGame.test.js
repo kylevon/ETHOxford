@@ -18,10 +18,85 @@ describe("MultiplayerPokerGame", function () {
         return ethers.utils.hexlify(ethers.utils.randomBytes(32));
     }
 
+    // Helper function to create a game state
+    function createGameState(overrides = {}) {
+        const baseState = {
+            encryptedDeck: "0x",
+            encryptedHands: Array(N_PLAYERS).fill("0x"),
+            bets: Array(N_PLAYERS).fill(ethers.utils.parseEther("0.2")),
+            currentRound: 0,
+            encryptedCommunityCards: "0x",
+            currentPlayer: 0,
+            folded: Array(N_PLAYERS).fill(false),
+            commitments: Array(N_PLAYERS).fill("0x"),
+            openings: Array(N_PLAYERS).fill("0x")
+        };
+
+        // Deep merge arrays
+        const state = { ...baseState };
+        for (const key in overrides) {
+            if (Array.isArray(overrides[key])) {
+                state[key] = overrides[key].map(val => {
+                    if (typeof val === 'string' && val.startsWith('0.')) {
+                        return ethers.utils.parseEther(val);
+                    }
+                    return val;
+                });
+            } else {
+                state[key] = overrides[key];
+            }
+        }
+        
+        return state;
+    }
+
+    // Helper function to create a contract state
+    function createContractState(gameStateOverrides = {}, stateOverrides = {}) {
+        const gameState = createGameState(gameStateOverrides);
+        
+        const baseState = {
+            mode: "exec",
+            id: 0,
+            tt: "0x",
+            t: Math.floor(Date.now() / 1000),
+            L: Array(N_PLAYERS).fill(true),
+            tv: "0x",
+            b: Array(N_PLAYERS).fill(ethers.utils.parseEther("1")),
+            B: Array(N_PLAYERS).fill(0),
+            game: gameState
+        };
+
+        // Deep merge arrays
+        const state = { ...baseState };
+        for (const key in stateOverrides) {
+            if (Array.isArray(stateOverrides[key])) {
+                state[key] = stateOverrides[key].map(val => {
+                    if (typeof val === 'string' && val.startsWith('0.')) {
+                        return ethers.utils.parseEther(val);
+                    }
+                    return val;
+                });
+            } else if (key === 'game') {
+                state[key] = createGameState(stateOverrides[key]);
+            } else {
+                state[key] = stateOverrides[key];
+            }
+        }
+
+        // Encode the state using defaultAbiCoder
+        return ethers.utils.defaultAbiCoder.encode(
+            [
+                "tuple(string mode, uint256 id, bytes tt, uint256 t, bool[] L, bytes tv, uint256[] b, uint256[] B, " +
+                "tuple(bytes encryptedDeck, bytes[] encryptedHands, uint256[] bets, uint8 currentRound, " +
+                "bytes encryptedCommunityCards, uint8 currentPlayer, bool[] folded, bytes[] commitments, bytes[] openings) game)"
+            ],
+            [state]
+        );
+    }
+
     beforeEach(async function () {
         [owner, addr1, addr2, addr3] = await ethers.getSigners();
 
-        // Deploy the contract
         const MultiplayerPokerGame = await ethers.getContractFactory("MultiplayerPokerGame");
         multiplayerPokerGame = await MultiplayerPokerGame.deploy(
             N_PLAYERS,
@@ -180,49 +255,198 @@ describe("MultiplayerPokerGame", function () {
 
     describe("Move Validation", function () {
         it("Should validate check moves correctly", async function () {
-            // Create game state components with encrypted data
-            const gameState = [
-                mockEncrypt("deck"), // encryptedDeck
-                Array(N_PLAYERS).fill(0).map(() => mockEncrypt("hand")), // encryptedHands
-                [ethers.utils.parseEther("0.2"), ethers.utils.parseEther("0.2"), ethers.utils.parseEther("0.2")], // bets
-                0, // currentRound
-                mockEncrypt("community"), // encryptedCommunityCards
-                0, // currentPlayer
-                Array(N_PLAYERS).fill(false), // folded
-                Array(N_PLAYERS).fill("0x"), // commitments
-                Array(N_PLAYERS).fill("0x")  // openings
-            ];
+            // Create a state where all players have equal bets
+            const gameState = createGameState({
+                bets: [ethers.utils.parseEther("0.2"), ethers.utils.parseEther("0.2"), ethers.utils.parseEther("0.2")],
+                currentPlayer: 0
+            });
+            const state = createContractState({ ...gameState });
 
-            // Create state components
-            const state = [
-                "exec", // mode
-                0, // id
-                "0x", // tt
-                Math.floor(Date.now() / 1000), // t
-                Array(N_PLAYERS).fill(true), // L
-                "0x", // tv
-                Array(N_PLAYERS).fill(ethers.utils.parseEther("1")), // b
-                Array(N_PLAYERS).fill(0), // B
-                gameState // game
-            ];
+            // Encode the current state as the validation function
+            const validationFunction = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(string,uint256,bytes,uint256,bool[],bytes,uint256[],uint256[],tuple(bytes,bytes[],uint256[],uint8,bytes,uint8,bool[],bytes[],bytes[]))"],
+                [state]
+            );
 
-            // Encode a check move
+            // Create a check move
             const moveData = ethers.utils.defaultAbiCoder.encode(
                 ["uint8", "uint256", "bytes", "bytes"],
                 [0, 0, "0x", "0x"] // moveType = 0 (check), amount = 0, signature = empty, mpcData = empty
             );
 
-            // Encode state
-            const encodedState = ethers.utils.defaultAbiCoder.encode(
+            // Verify the move is valid
+            const isValid = await multiplayerPokerGame.verifyTranscript(
+                moveData,  // extension
+                "0x",     // currentTranscript (empty for this test)
+                validationFunction
+            );
+
+            expect(isValid).to.be.true;
+        });
+
+        it("Should reject check when bets are not equal", async function () {
+            // Create a state where player 1 has bet more than others
+            const bets = [
+                ethers.utils.parseEther("0.2"),  // Current player
+                ethers.utils.parseEther("0.4"),  // Previous player raised
+                ethers.utils.parseEther("0.2")
+            ];
+            console.log("Check validation test:");
+            console.log("Bets array:", bets.map(b => ethers.utils.formatEther(b)));
+
+            const gameState = createGameState({
+                bets: bets,
+                currentPlayer: 0  // First player's turn
+            });
+
+            console.log("Game state bets:", gameState.bets.map(b => ethers.utils.formatEther(b)));
+            const state = {
+                mode: "exec",
+                id: 0,
+                tt: "0x",
+                t: Math.floor(Date.now() / 1000),
+                L: Array(N_PLAYERS).fill(true),
+                tv: "0x",
+                b: Array(N_PLAYERS).fill(ethers.utils.parseEther("1")),
+                B: Array(N_PLAYERS).fill(0),
+                game: gameState
+            };
+
+            // Encode the current state as the validation function
+            const validationFunction = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(string mode, uint256 id, bytes tt, uint256 t, bool[] L, bytes tv, uint256[] b, uint256[] B, " +
+                "tuple(bytes encryptedDeck, bytes[] encryptedHands, uint256[] bets, uint8 currentRound, " +
+                "bytes encryptedCommunityCards, uint8 currentPlayer, bool[] folded, bytes[] commitments, bytes[] openings) game)"],
+                [state]
+            );
+
+            // Create a check move (should fail since there's a higher bet)
+            const moveData = ethers.utils.defaultAbiCoder.encode(
+                ["uint8", "uint256", "bytes", "bytes"],
+                [0, 0, "0x", "0x"]
+            );
+
+            // Verify the move is invalid
+            const isValid = await multiplayerPokerGame.verifyTranscript(
+                moveData,
+                "0x",
+                validationFunction
+            );
+
+            expect(isValid).to.be.false;
+        });
+
+        it("Should validate bet moves correctly", async function () {
+            // Create a state where current player can bet
+            const gameState = createGameState({
+                bets: [
+                    ethers.utils.parseEther("0.2"),  // Current player
+                    ethers.utils.parseEther("0.2"),
+                    ethers.utils.parseEther("0.2")
+                ],
+                currentPlayer: 0
+            });
+            const state = createContractState({ ...gameState });
+
+            // Encode the current state as the validation function
+            const validationFunction = ethers.utils.defaultAbiCoder.encode(
                 ["tuple(string,uint256,bytes,uint256,bool[],bytes,uint256[],uint256[],tuple(bytes,bytes[],uint256[],uint8,bytes,uint8,bool[],bytes[],bytes[]))"],
                 [state]
             );
 
+            // Create a bet move (raising to 0.4 ETH)
+            const moveData = ethers.utils.defaultAbiCoder.encode(
+                ["uint8", "uint256", "bytes", "bytes"],
+                [1, ethers.utils.parseEther("0.4"), "0x", "0x"]
+            );
+
             // Verify the move is valid
-            const isValid = await multiplayerPokerGame.callStatic["verifyTranscript"](
+            const isValid = await multiplayerPokerGame.verifyTranscript(
                 moveData,
                 "0x",
-                "0x"
+                validationFunction
+            );
+
+            expect(isValid).to.be.true;
+        });
+
+        it("Should reject insufficient bets", async function () {
+            // Create a state where player 0 has bet 0.4 ETH
+            const bets = [
+                ethers.utils.parseEther("0.4"),  // Previous player bet 0.4
+                ethers.utils.parseEther("0.2"),  // Current player
+                ethers.utils.parseEther("0.2")
+            ];
+            console.log("Insufficient bet test:");
+            console.log("Bets array:", bets.map(b => ethers.utils.formatEther(b)));
+
+            const gameState = createGameState({
+                bets: bets,
+                currentPlayer: 1  // Second player's turn
+            });
+
+            console.log("Game state bets:", gameState.bets.map(b => ethers.utils.formatEther(b)));
+            const state = {
+                mode: "exec",
+                id: 0,
+                tt: "0x",
+                t: Math.floor(Date.now() / 1000),
+                L: Array(N_PLAYERS).fill(true),
+                tv: "0x",
+                b: Array(N_PLAYERS).fill(ethers.utils.parseEther("1")),
+                B: Array(N_PLAYERS).fill(0),
+                game: gameState
+            };
+
+            // Encode the current state as the validation function
+            const validationFunction = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(string mode, uint256 id, bytes tt, uint256 t, bool[] L, bytes tv, uint256[] b, uint256[] B, " +
+                "tuple(bytes encryptedDeck, bytes[] encryptedHands, uint256[] bets, uint8 currentRound, " +
+                "bytes encryptedCommunityCards, uint8 currentPlayer, bool[] folded, bytes[] commitments, bytes[] openings) game)"],
+                [state]
+            );
+
+            // Create a bet move (betting 0.3 ETH - less than current max of 0.4)
+            const moveData = ethers.utils.defaultAbiCoder.encode(
+                ["uint8", "uint256", "bytes", "bytes"],
+                [1, ethers.utils.parseEther("0.3"), "0x", "0x"]
+            );
+
+            // Verify the move is invalid
+            const isValid = await multiplayerPokerGame.verifyTranscript(
+                moveData,
+                "0x",
+                validationFunction
+            );
+
+            expect(isValid).to.be.false;
+        });
+
+        it("Should validate fold moves correctly", async function () {
+            // Create a state where player can fold
+            const gameState = createGameState({
+                bets: [ethers.utils.parseEther("0.4"), ethers.utils.parseEther("0.2"), ethers.utils.parseEther("0.2")],
+                currentPlayer: 1
+            });
+            const state = createContractState({ ...gameState });
+
+            // Encode the current state as the validation function
+            const validationFunction = ethers.utils.defaultAbiCoder.encode(
+                ["tuple(string,uint256,bytes,uint256,bool[],bytes,uint256[],uint256[],tuple(bytes,bytes[],uint256[],uint8,bytes,uint8,bool[],bytes[],bytes[]))"],
+                [state]
+            );
+
+            // Create a fold move
+            const moveData = ethers.utils.defaultAbiCoder.encode(
+                ["uint8", "uint256", "bytes", "bytes"],
+                [2, 0, "0x", "0x"]
+            );
+
+            // Verify the move is valid
+            const isValid = await multiplayerPokerGame.verifyTranscript(
+                moveData,
+                "0x",
+                validationFunction
             );
 
             expect(isValid).to.be.true;

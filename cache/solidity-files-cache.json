@@ -38,8 +38,8 @@
       ]
     },
     "/home/jonas/Documents/ETHOxford/contracts/MultiplayerPokerGame.sol": {
-      "lastModificationDate": 1739022308124,
-      "contentHash": "923c8e3c1fe842784e7ff0f8a6c9973a",
+      "lastModificationDate": 1739033184187,
+      "contentHash": "814904f5f69cddd7b92c469209f2bb32",
       "sourceName": "contracts/MultiplayerPokerGame.sol",
       "solcConfig": {
         "version": "0.8.19",
