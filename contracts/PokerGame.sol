@@ -355,4 +355,41 @@ contract PokerGame {
         games[gameId].currentBet = 0;
         games[gameId].lastBetAmount = 0;
     }
+
+    function getGameState(uint256 gameId) external view returns (
+        uint8[5] memory communityCards,
+        uint256 pot,
+        uint256 currentBet,
+        uint8 currentPlayer,
+        uint256 roundDeadline,
+        GamePhase phase,
+        address firstPlayer,
+        uint256 lastBetAmount,
+        uint8 communityCardsDealt,
+        uint256 numPlayers
+    ) {
+        GameState storage game = games[gameId];
+        return (
+            game.communityCards,
+            game.pot,
+            game.currentBet,
+            game.currentPlayer,
+            game.roundDeadline,
+            game.phase,
+            game.firstPlayer,
+            game.lastBetAmount,
+            game.communityCardsDealt,
+            game.players.length
+        );
+    }
+
+    function isFirstPlayer(address player) public view returns (bool) {
+        uint256 gameId = playerGameId[player];
+        if (gameId == 0) return false;
+        return games[gameId].firstPlayer == player;
+    }
+
+    function getNumberOfPlayers(uint256 gameId) public view returns (uint256) {
+        return games[gameId].players.length;
+    }
 }
