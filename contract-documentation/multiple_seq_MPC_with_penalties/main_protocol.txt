@@ -1,5 +1,20 @@
-Parties initialize the parameters as in Figure 12. Then for id = 1, 2, · · · : Parties run
-the local execution prescribed in Figure 11. Recall that each party Pj maintains
+Overview:
+
+We now discuss how to implement a MultiPlayerPokerGame that uses repeatedly evaluated multi-stage MPC function. Since we are now dealing with reactive functionalities, we make use of an MPC protocol that handles reactive
+functionalities (say GMW). Since we are dealing with cash distribution, we will
+let the MPC protocol take, in addition to regular inputs, values that represent
+the current balance of each party. Note that this balance could change at the
+end of each stage of the reactive function evaluation. We stress that the reactive
+functions take only strings as inputs/outputs (and do not handle coins), and the
+amount of coins and current balance are merely specified as strings. We assume
+that the updated balance vectors can be obtained directly from the transcript
+of the protocol implementing the reactive function.
+
+
+Formal description:
+
+Parties initialize the parameters as in selecting_parameters.txt. Then for id = 1, 2, · · · : Parties run
+the local execution prescribed in id-th_off_the_chain_local_execution.txt. Recall that each party Pj maintains
 a variable bestj which is initialized as ⊥.
 1. If a party Pj wants to exit the contract, then it sends w = exit to F∗
 StCon+.

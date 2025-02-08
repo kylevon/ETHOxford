@@ -17,5 +17,12 @@
     "ethers": "^6.13.5",
     "glob": "^10.3.0",
     "hardhat": "^2.22.18"
-  }
+  },
+  "main": "hardhat.config.js",
+  "directories": {
+    "test": "test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
