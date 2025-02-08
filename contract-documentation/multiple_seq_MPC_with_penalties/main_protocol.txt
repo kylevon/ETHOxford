@@ -1,46 +1,18 @@
 Overview:
 
-We now discuss how to implement a MultiPlayerPokerGame that uses repeatedly evaluated multi-stage MPC function. Since we are now dealing with reactive functionalities, we make use of an MPC protocol that handles reactive
-functionalities (say GMW). Since we are dealing with cash distribution, we will
-let the MPC protocol take, in addition to regular inputs, values that represent
-the current balance of each party. Note that this balance could change at the
-end of each stage of the reactive function evaluation. We stress that the reactive
-functions take only strings as inputs/outputs (and do not handle coins), and the
-amount of coins and current balance are merely specified as strings. We assume
-that the updated balance vectors can be obtained directly from the transcript
-of the protocol implementing the reactive function.
+We now discuss how to implement a MultiPlayerPokerGame that uses repeatedly evaluated multi-stage MPC function. Since we are now dealing with reactive functionalities, we make use of an MPC protocol that handles reactive functionalities (say GMW). Since we are dealing with cash distribution, we will let the MPC protocol take, in addition to regular inputs, values that represent the current balance of each party. Note that this balance could change at the end of each stage of the reactive function evaluation. We stress that the reactive functions take only strings as inputs/outputs (and do not handle coins), and the amount of coins and current balance are merely specified as strings. We assume that the updated balance vectors can be obtained directly from the transcript of the protocol implementing the reactive function.
 
 
 Formal description:
 
-Parties initialize the parameters as in selecting_parameters.txt. Then for id = 1, 2, · · · : Parties run
-the local execution prescribed in id-th_off_the_chain_local_execution.txt. Recall that each party Pj maintains
-a variable bestj which is initialized as ⊥.
-1. If a party Pj wants to exit the contract, then it sends w = exit to F∗
-StCon+.
-2. If there is an abort at any stage during a local off-chain execution, then parties
-do not continue any more local executions and instead trigger F∗
-StCon+ with
-the value bestj if it is non-null.
-3. Each party Pj waits and responds to state changes in F∗
-StCon+ depending on
-the current state st:
-(a) If st.mode = “payout”/“abort” and st.L[j] = 1, send w = exit to F∗
-StCon+.
-(b) If (1) st.id < bestj .id, or (2) st.id = bestj .id and |bestj .tt| > |st.tt|, then
-submit bestj to F∗
-StCon+.
-(c) If st.id = bestj .id + 1 and j = 1 + |st.tt| mod n, then choose input yj
-and use fresh randomness ωj and compute (m, σ) ← nmf(st.tt; (yj , ωj , b,
-skj )) and send (message, st.id, (m, σ)) to F∗
-StCon+ and update bestj ←
-(transcript, st.id, st.tt‖(m, σ), st.tv, st.b, st.σ).
-(d) If st.id = bestj .id and if j = 1 + |st.tt| mod n and if |st.tt| 6 = |st.tv|, then
-compute (m, σ) ← nmf(st.tt; (yj , ωj , b, skj )) where yj , ωj are inputs to
-the current stage. Send bestj ← (message, st.id, (m, σ)) to F∗
-StCon+ and
-update bestj ← (transcript, st.id, st.tt‖(m, σ), st.tv, st.b, st.σ).
-Finally, parties also keep track of whether st.mode = “exit” or “exec” and the
-current time t is such that t > st.t + ∆. In this case, parties send w = exit in order
-to claim their payout or compensation and do not participate in any further local
-executions.
+Parties initialize the parameters as in selecting_parameters.txt. Then for id = 1, 2, · · · : Parties run the local execution prescribed in d-th_off_the_chain_local_execution.txt. Recall that each party Pj maintains a variable bestj which is initialized as ⊥.
+
+1. If a party Pj wants to exit the contract, then it sends w = exit to DynamicStatefulContract.
+2. If there is an abort at any stage during a local off-chain execution, then parties do not continue any more local executions and instead trigger DynamicStatefulContract with the value bestj if it is non-null.
+3. Each party Pj waits and responds to state changes in DynamicStatefulContract depending on the current state st:
+(a) If st.mode = “payout”/“abort” and st.L[j] = 1, send w = exit to DynamicStatefulContract.
+(b) If (1) st.id < bestj .id, or (2) st.id = bestj .id and |bestj .tt| > |st.tt|, then submit bestj to DynamicStatefulContract.
+(c) If st.id = bestj .id + 1 and j = 1 + |st.tt| mod n, then choose input yj and use fresh randomness ωj and compute (m, σ) ← nmf(st.tt; (yj , ωj , b, skj )) and send (message, st.id, (m, σ)) to DynamicStatefulContract and update bestj ← (transcript, st.id, st.tt‖(m, σ), st.tv, st.b, st.σ).
+(d) If st.id = bestj .id and if j = 1 + |st.tt| mod n and if |st.tt| 6 = |st.tv|, then compute (m, σ) ← nmf(st.tt; (yj , ωj , b, skj )) where yj , ωj are inputs to the current stage. Send bestj ← (message, st.id, (m, σ)) to DynamicStatefulContract and update bestj ← (transcript, st.id, st.tt‖(m, σ), st.tv, st.b, st.σ). 
+
+Finally, parties also keep track of whether st.mode = “exit” or “exec” and the current time t is such that t > st.t + ∆. In this case, parties send w = exit in order to claim their payout or compensation and do not participate in any further local executions.

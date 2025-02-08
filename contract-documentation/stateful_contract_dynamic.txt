@@ -1,4 +1,4 @@
-Description:
+Informal description:
 
 DynamicStatefulContract is what we use to abstract the smart contracts functionality provided by cryptocurrencies. At a high level, it lets parties run a time-dependent stateful computation.
 In other words, the contract encodes a finite state computation where each transition could potentially be dependent on the time of the transition.
@@ -10,21 +10,24 @@ Following this, parties together specify a finite state computation denoted Prog
 Extra functionality: DynamicStatefulContract accepts coin deposits via an `update` command, even during the execution phase. We note that DynamicStatefulContract is also supported by Ethereum.
 
 
-Formal documentation:
+The parameters taken by this contract are:
+- `sid`: session identifier
+- `Prog`: state transition function
+- `Update`: update function (will be used to add coins to the contract)
+- `st`: initial state
+- `dj`: initial deposit vector
 
-Notation: session identifier sid, set of parties {P1, . . . , Pn}, initial deposit vector
-d1 = · · · dn = (n − 1)q, where q is the penalty amount, a program Prog, an initial
-state st, and a validation function for updates Update. During the execution phase,
-parties will be able to add coins via Update.
-Initialization phase: Wait to get (init, sid, ssid, Prog, Update, st, dj , coins(dj ))
-from each Pj . Initialize Q ← ∑
-j∈[n] dj .
-Execution phase: Repeat until termination:
-– If a message (update, sid, ssid, u, b, coins(b)) is received from Pj at time t
-such that Update(j, w, t; st) 6 = ⊥, then set (Prog, Update, st) ← Update(j, u,
-t; Prog, st), accept coins(b), update Q ← Q + bj , and send (update, sid, ssid,
-j, u, t, st, Prog, Update) to all parties.
-– If a message (trigger, sid, ssid, w) is received from Pj at time t such that
-Prog(j, w, t; st) 6 = ⊥. Then, let (st, e) ← Prog(j, w, t; st). If e < Q, then send
-(output, sid, ssid, j, w, t, st, e) to each Pk and send (pay, sid, ssid, coins(e)) to
-Pj . Update Q ← Q − e. If Q = 0, then terminate.
+
+
+Formal description:
+
+Notation:
+session identifier sid, set of parties {P1, . . . , Pn}, initial deposit vector d1 = · · · dn = (n − 1)q, where q is the penalty amount, a program Prog, an initial state st, and a validation function for updates Update. During the execution phase, parties will be able to add coins via Update.
+
+Initialization phase:
+Wait to get (init, sid, ssid, Prog, Update, st, dj , coins(dj )) from each Pj . Initialize Q ← ∑ j∈[n] dj
+
+Execution phase:
+Repeat until termination:
+– If a message (update, sid, ssid, u, b, coins(b)) is received from Pj at time t such that Update(j, w, t; st) 6 = ⊥, then set (Prog, Update, st) ← Update(j, u, t; Prog, st), accept coins(b), update Q ← Q + bj , and send (update, sid, ssid, j, u, t, st, Prog, Update) to all parties
+– If a message (trigger, sid, ssid, w) is received from Pj at time t such that Prog(j, w, t; st) 6 = ⊥. Then, let (st, e) ← Prog(j, w, t; st). If e < Q, then send (output, sid, ssid, j, w, t, st, e) to each Pk and send (pay, sid, ssid, coins(e)) to Pj . Update Q ← Q − e. If Q = 0, then terminate.

@@ -1,93 +1,19 @@
 Overview:
 
-The local executions
-begin by allowing parties to add coins to their deposit (which will be redistributed depending on the output of the stage functions of the reactive function)
-but only between different reactive function evaluations. In order to synchronize (in order to make the simulation go through) and ensure that coins are
-not added while a reactive function is being evaluated, we ask parties to obtain
-signatures from all parties. (Then we design F∗
-StCon+ such that it accepts coins
-only when the submitting party has signatures from all participants.) Then, in
-the next step, we ask parties to agree on the transcript validation function for
-the reactive protocol π implementing g(id) that they are going to execute. That
-is, in the id-th local execution, parties agree on tv(id) and each party signs this
-value under its signing key and broadcasts it to all parties. This is different from
-the previous case where while implementing F∗
-MSFE, we needed parties to sign
-on h(id) in the id-th execution but after the secure computation protocol was
-run. Note that we also need parties to agree on the updated balance vector b
-before beginning the id-th local execution.
+The local executions begin by allowing parties to add coins to their deposit (which will be redistributed depending on the output of the stage functions of the reactive function) but only between different reactive function evaluations. In order to synchronize (in order to make the simulation go through) and ensure that coins are not added while a reactive function is being evaluated, we ask parties to obtain signatures from all parties. (Then we design DynamicStatefulContract such that it accepts coins only when the submitting party has signatures from all participants.) Then, in the next step, we ask parties to agree on the transcript validation function for the reactive protocol π implementing g(id) that they are going to execute. That is, in the id-th local execution, parties agree on tv(id) and each party signs this value under its signing key and broadcasts it to all parties. This is different from the previous case where while implementing F∗ MSFE, we needed parties to sign on h(id) in the id-th execution but after the secure computation protocol was run. Note that we also need parties to agree on the updated balance vector b before beginning the id-th local execution.
 
-Once the signatures are done, parties begin evaluating each stage of the reactive computation in sequence. Parties then run a secure computation protocol
-for each stage sequentially until the entire reactive protocol completes. Note
-that a typical protocol for a reactive computation maintains state across different stages by secret sharing this value among the participants. That is, when parties are ready to begin the secure computation protocol for the next stage,
-they supply along with the inputs for the new stage also an authenticated secret
-share of the previous state. Note that the balance vectors are supplied as input
-to the reactive MPC (in order to calculate the updated balance). We abstract
-these details and assume that the authenticated secret shares of intermediate
-states corresponding to party Pj is part of its input yj for this stage. The next
-message function nmf takes the current available transcript as input, along with
-the parties’ input for this stage, the randomness, the current balance vector, and
-also the secret signing key of this party. Note that nmf and tv are such that for
-every partial transcript tt′ such that |tt′| = (j − 1) mod n and tv(tt′) = 1, we
-have that (m, σ) ← nmf(tt′; (yj , ωj , b, skj )) satisfies tv(tt‖(m, σ)) = 1. Observe
-that nmf produces signed messages that continue that transcript, and tv checks
-whether messages are signed appropriately, and if the newly extended transcript
-is valid according to the underlying reactive MPC. Such modifications to the underlying reactive MPC protocol (namely, adding signatures in nmf and verifying
-them in tv, and getting updated balance vectors) were also present in previous
-protocols that dealt with the reactive case [26,27]. Like in the implementation of
-F∗MSFE, here too we ask each party Pj to maintain a value bestj which essentially
-maintains the transcript corresponding to the current execution. Note that bestj
-contains both tv(id) as well signatures on it from all parties denoted by σ(id).
+Once the signatures are done, parties begin evaluating each stage of the reactive computation in sequence. Parties then run a secure computation protocol for each stage sequentially until the entire reactive protocol completes. Note that a typical protocol for a reactive computation maintains state across different stages by secret sharing this value among the participants. That is, when parties are ready to begin the secure computation protocol for the next stage, they supply along with the inputs for the new stage also an authenticated secret share of the previous state. Note that the balance vectors are supplied as input to the reactive MPC (in order to calculate the updated balance). We abstract these details and assume that the authenticated secret shares of intermediate states corresponding to party Pj is part of its input yj for this stage. The next message function nmf takes the current available transcript as input, along with the parties’ input for this stage, the randomness, the current balance vector, and also the secret signing key of this party. Note that nmf and tv are such that for every partial transcript tt′ such that |tt′| = (j − 1) mod n and tv(tt′) = 1, we have that (m, σ) ← nmf(tt′; (yj , ωj , b, skj )) satisfies tv(tt‖(m, σ)) = 1. Observe that nmf produces signed messages that continue that transcript, and tv checks whether messages are signed appropriately, and if the newly extended transcript is valid according to the underlying reactive MPC. Such modifications to the underlying reactive MPC protocol (namely, adding signatures in nmf and verifying them in tv, and getting updated balance vectors) were also present in previous protocols that dealt with the reactive case [26,27]. Like in the implementation of F∗MSFE, here too we ask each party Pj to maintain a value bestj which essentially maintains the transcript corresponding to the current execution. Note that bestj contains both tv(id) as well signatures on it from all parties denoted by σ(id).
 
 
 
 
 Formal description:
 
-1. (Adding new coins) If some party Pj wants to add coins(bj ) to F∗
-StCon+, then it
-sends b′ ← b + (· · · , 0, bj , 0, · · · ) to all parties. Each party Pk then generates a
-signature ψ′
-k ← Sign(id, b′) and broadcasts it. If Pj receives signatures from all
-parties, then Pj sends u = (update, b′, ψ, coins(bj )) to F∗
-StCon+. Other parties
-wait to receive notification from F∗
-StCon+ of the updated balance. If either (1)
-Pj did not obtain signatures from other parties; or (2) the remaining parties
-did not receive notification from F∗
-StCon+, then all honest parties go to the
-on-chain contract with the intention of exiting the contract. See Figure 13.
-On the other hand, if the above step was successfully completed, then parties
-update b ← b′ and execute the next step.
-2. (Parameter agreement) Initialize transcript tt = ⊥. Parties agree on the
-reactive function g(id) = {g(id)
-k }k to be executed next. Parties also agree on a
-specific MPC protocol π using which they will securely compute g(id). Let the
-transcript verification predicate for this reactive MPC protocol be denoted by
-tv(id). We use |tv(id)| to denote the number of messages in a valid transcript that
-corresponds to a completed execution of g(id). Once they agree on tv(id), each Pj
-computes σ′
-j ← Sign((id, tv(id), b); skj ) and broadcasts this value to all parties.
-Each party sets σ(id) = (σ′
-1, . . . , σ′
-n). If not all signatures were obtained, then
-parties stop the local execution and go to the on-chain contract for resolution.
-Else each party Pj updates bestj ← (transcript, id, ⊥, tv(id), b, σ(id))
-3. (Reactive MPC execution) Parse g(id) = {g(id)
-k }k∈[ρ]. For k = 1, . . . , ρ:
-– Let r(id)
-k denote the number of rounds in a standard (unfair) MPC protocol
-that implements g(id)
-k . We denote party Pj ’s inputs to g(id)
-k by yj and the
-corresponding randomness by ωj . For r = 1, . . . , r(id)
-k sequentially:
-• Let j = r mod n. Party Pj computes its next message (mr , σr ) ←
-nmf(tt; (yj , ωj , b, skj )), and broadcasts (mr , σr ) to all parties.
-• If no message was received, then parties abort the local execution and go to the on-chain contract for resolution. Else, each
-Pj updates the transcript tt ← tt‖(mr , σr ) and sets bestj ←
-(transcript, id, tt, tv(id), b′, σ).
-– Parties compute the output of g(id)
-k using the completed transcript tt.
-Note that this output specifies the new balance vector b′. Parties update
-b ← b′.
+1. (Adding new coins)
+If some party Pj wants to add coins(bj ) to DynamicStatefulContract, then it sends b′ ← b + (· · · , 0, bj , 0, · · · ) to all parties. Each party Pk then generates a signature ψ′ k ← Sign(id, b′) and broadcasts it. If Pj receives signatures from all parties, then Pj sends u = (update, b′, ψ, coins(bj )) to DynamicStatefulContract. Other parties wait to receive notification from DynamicStatefulContract of the updated balance. If either (1) Pj did not obtain signatures from other parties; or (2) the remaining parties did not receive notification from DynamicStatefulContract, then all honest parties go to the on-chain contract with the intention of exiting the contract. See Figure 13. On the other hand, if the above step was successfully completed, then parties update b ← b′ and execute the next step.
+
+2. (Parameter agreement)
+Initialize transcript tt = ⊥. Parties agree on the reactive function g(id) = {g(id) k }k to be executed next. Parties also agree on a specific MPC protocol π using which they will securely compute g(id). Let the transcript verification predicate for this reactive MPC protocol be denoted by tv(id). We use |tv(id)| to denote the number of messages in a valid transcript that corresponds to a completed execution of g(id). Once they agree on tv(id), each Pj computes σ′j ← Sign((id, tv(id), b); skj ) and broadcasts this value to all parties. Each party sets σ(id) = (σ′1, . . . , σ′n). If not all signatures were obtained, then parties stop the local execution and go to the on-chain contract for resolution. Else each party Pj updates bestj ← (transcript, id, ⊥, tv(id), b, σ(id))
+
+3. (Reactive MPC execution)
+Parse g(id) = {g(id) k }k∈[ρ]. For k = 1, . . . , ρ: – Let r(id) k denote the number of rounds in a standard (unfair) MPC protocol that implements g(id) k . We denote party Pj ’s inputs to g(id) k by yj and the corresponding randomness by ωj . For r = 1, . . . , r(id) k sequentially: • Let j = r mod n. Party Pj computes its next message (mr , σr ) ← nmf(tt; (yj , ωj , b, skj )), and broadcasts (mr , σr ) to all parties. • If no message was received, then parties abort the local execution and go to the on-chain contract for resolution. Else, each Pj updates the transcript tt ← tt‖(mr , σr ) and sets bestj ← (transcript, id, tt, tv(id), b′, σ). – Parties compute the output of g(id) k using the completed transcript tt. Note that this output specifies the new balance vector b′. Parties update b ← b′.

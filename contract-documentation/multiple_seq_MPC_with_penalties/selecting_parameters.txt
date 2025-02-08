@@ -1,107 +1,39 @@
 Overview:
 
-We select the parameters for a DynamicStatefulContract, which we refer to as F∗
-StCon+ (and whose functionality we hope is implemented natively in Ethereum smart contracts)
+We select the parameters for a DynamicStatefulContract, which we refer to as F∗StCon+.
 
-The overall structure is similar to the F∗
-StCon parameters for F∗
-MSFE, and in particular we interpret the state st has having multiple components which keep track of the
-current mode of the state, the current transcript, the current execution id, time
-of last exec mode transition, and which parties have already withdrawn money
-from F∗
-StCon+. The main addition is now we also explicitly keep track of the
-transcript validation function of the current execution as part of the state. We
-denote this variable by st.tv. We also keep track of how much each party deposited in the variable st.B and the latest redistribution of cash (i.e., before
-st.id-th execution began) in the variable st.b. As with F∗
-StCon parameters for
-F∗
-MSFE, here too we make use of a subroutine pred that effectively determines if
-the trigger witness w extends the state of the current/latest off-chain execution.
-For the sake of presentation, we allow parties to submit a trigger witness w which
-extends st.tt. Alternatively, and in cases where st.id does not correspond to the
-latest execution, we also let parties submit a trigger witness w which provides
-the entire transcript of an off-chain execution. In this case, pred outputs 1 if the
-trigger was submitted at time t ≤ st.t + ∆ and if id > st.id or id = st.id but tt
-is a longer transcript than the (partial) transcript st.tt.
-
-The state transition function Prog will make use of pred described above. If
-pred outputs 1 then, the contract moves into exec mode and records the trigger
-time and updates the transcript with the transcript contained in the trigger. If
-the trigger is a token value exit, then if the current mode is either “init” or “exec”
-and st.tt is a completed transcript (we check this by checking if |st.tt| = |st.tv|),
-then we put the contract into exit mode and record the time. The rest of the
-contract specification is quite similar to the F∗
-MSFE case. In particular, when the trigger is a token value w = exit and if t > st.t + ∆ and the triggering
-party has not yet withdrawn money from F∗
-StCon+, we move the contract into
-“payout” or “abort” (depending on the current mode) and refund the deposit
-(plus current balance plus compensation if applicable) to the triggering party as
-long as it had not contributed to an off-chain/on-chain aborted execution. To
-detect whether the triggering party Pj aborted an execution, we simply check if
-j = 1+|st.tt| mod n and |st.tt| 6 = |st.tv| holds. In this case, we penalize the party
-by not giving its deposit back but instead distributing it among the remaining
-parties. This is slightly different from the F∗
-MSFE case, where we could potentially
-penalize multiple corrupt parties depending on whether they contributed their
-output secret share to the execution. Here, on the other hand, we only penalize
-one party ja = 1 + |st.tt| mod n. Note that we also redistribute the deposits
-made by the parties depending on the output of the latest complete execution.
-If the execution was completed on-chain, then we use the function cashj (which
-we assume is a part of tv for simplicity) applied on st.tt to determine how
-much money party Pj is supposed to obtain. On the other hand, if the on-chain
-execution was also aborted, then (in addition to paying compensation to the
-honest parties) we distribute the initial deposits depending on the latest balance
-prior to this execution (which is stored in variable st.bj ).
-Finally, the Update function provides an interface for parties to add coins
-between different reactive MPCs. Upon receiving a witness u = (b′, ψ, coins(bj )),
-it checks if the provided coins bj plus the coins already deposited with F∗
-StCon+
-(i.e., sum of elements in st.B) matches the amount specified in the balance vector
-(i.e., sum of elements in b′). Note that the signatures also include the party index
-j (to avoid situations where a different party abuses the broadcasted signatures).
-Also, note that the deposits st.B only increase which ensures that there are
-no replay attacks. This is because once F∗
-StCon+ starts giving back coins (i.e.,
-st.mode ∈ {“payout”, “abort”}), then it does not accept any more coins.
+A list of the parameters is:
+- `pk`: set of public keys of all the parties
+- `∆`: the length of the time interval within which parties need to act in order to keep the contract from defaulting
+- `st`: state: a 5-tuple (st.mode, st.id, st.tt, st.t, st.L) where:
+    (1) st.mode represents the current mode in which the contract is in, and is one of {“init”, “exec”, “exit”, “payout”, “abort”, “inactive”}
+    (2) st.id represents the id of the execution that is being continued currently on the on-chain contract
+    (3) st.tt represents the current transcript of the execution that is being continued on the chain
+    (4) st.t represents the time when the on-chain contract was triggered and either (a) was moved to “exit” or (b) resulted in a change of the variable st.tt
+    (5) st.L is a boolean array that represents which parties have already withdrawn their deposits and compensations from F∗StCon
 
 
 
 Formal description:
 
-Parameters. The variable st denotes the current state of the contract. The values pk and ∆ are constant parameters to the contract and are always maintained as part of the state. We represent the state variable st as a seven tuple
-(st.mode, st.id, st.tt, st.t, st.L, st.tv, st.b, st.B). We omit pk and ∆ and the total
-deposits so far from the state to keep the presentation simple. The initial deposits
-are d1 = · · · = dn = (n − 1)q. The initial state is (“init”, −1, ⊥, −1, 1, ⊥, 0, 0).
-We also use a function cash (specified as part of st.tv) that takes a valid transcript
-tt and j as input, and outputs the amount of coins that need to be given to Pj .
+Parameters.
+The variable st denotes the current state of the contract. The val ues pk and ∆ are constant parameters to the contract and are always main tained as part of the state. We represent the state variable st as a seven tuple (st.mode, st.id, st.tt, st.t, st.L, st.tv, st.b, st.B). We omit pk and ∆ and the total deposits so far from the state to keep the presentation simple. The initial deposits are d1 = · · · = dn = (n − 1)q. The initial state is (“init”, −1, ⊥, −1, 1, ⊥, 0, 0). We also use a function cash (specified as part of st.tv) that takes a valid transcript tt and j as input, and outputs the amount of coins that need to be given to Pj.
 
-Subroutine pred. Let pred(j, w, t; st) = 1 if
-– w is parsed as (message, id, (m, σ)) with id = st.id, st.tv(st.tt‖(m, σ)) = 1; or
-– w is parsed as (transcript, id, tt, tv, b, σ) with (1) tv(tt) = 1; and (2) σ =
-(σ1, . . . , σn) and for each k ∈ [n] it holds that SigVerify((id, tv, b), σk ; pkk ) = 1
-and either (1) st.mode = “init”; or (2) st.mode = “exec”/“exit” and t ≤
-st.t + ∆ and either (2.1) id > st.id or (2.2) id = st.id and |tt| > |st.tt|.
-Adding money. Update(j, u, t; Prog, st) is defined as follows: If u = (b′,
-ψ, coins(bj )), then parse ψ as (ψ′, . . . , ψ′
-n) and verify whether bj 6 = 0 and
-SigVerify((j, b′), ψk ; pkk ) = 1 for all k ∈ [n]. Then check if ∑
-k∈[n] b′
-k = bj +
-∑
-k∈[n] st.B[k]. If all checks pass and if st.mode 6 ∈ {“exit”, “abort”, “payout”},
-then update st.B[j] ← st.B[j] + bj . Else output ⊥.
-State transitions. Prog(j, w, t; st) is defined as follows: Initialize e ← 0.
-– If w = (transcript, id, tt, tv, b, σ) and pred(j, w, t; st) = 1: Set st ← (“exec”,
-id, tt, t, st.L, tv, b, st.B).
-– Else if w = (message, id, (m, σ)) and pred(j, w, t; st) = 1: Update st.tt ←
-st.tt‖(m, σ).
-– Else if w = exit:
-• If (1) st.mode = “init”, or (2) st.mode = “exec” and |st.tt| = |st.tv|: Set
-st.mode = “exit”, st.t ← t.
-• If st.mode = “exec”/“abort”, t > st.t + ∆, st.L[j] = 1, |st.tt| 6 = |st.tv| and
-j 6 = ja = 1 + |st.tt| mod n: Set e ← nq + st.bj , st.L[j] ← 0, st.L[ja] ← 0
-and st.mode ← “abort”.
-• If st.mode = “exit”/“payout”, and t > st.t + ∆ and st.L[j] = 1: Set
-e ← (n − 1)q + cash(j, st.tt), st.mode ← “payout”, and st.L[j] ← 0.
-If at the end of a transition, it holds that st.L[k] = 0 for all k ∈ [n], then we
-update st.mode ← “inactive”.
+Subroutine pred.
+Let pred(j, w, t; st) = 1 if – w is parsed as (message, id, (m, σ)) with id = st.id, st.tv(st.tt‖(m, σ)) = 1; or – w is parsed as (transcript, id, tt, tv, b, σ) with (1) tv(tt) = 1; and (2) σ = (σ1, . . . , σn) and for each k ∈ [n] it holds that SigVerify((id, tv, b), σk ; pkk ) = 1 and either (1) st.mode = “init”; or (2) st.mode = “exec”/“exit” and t ≤ st.t + ∆ and either (2.1) id > st.id or (2.2) id = st.id and |tt| > |st.tt|.
+
+Adding money.
+Update(j, u, t; Prog, st) is defined as follows: If u = (b′, ψ, coins(bj )), then parse ψ as (ψ′, . . . , ψ′n) and verify whether bj 6 = 0 and SigVerify((j, b′), ψk ; pkk ) = 1 for all k ∈ [n]. Then check if ∑
+k∈[n] b′ k = bj + ∑ k∈[n] st.B[k]. If all checks pass and if st.mode 6 ∈ {“exit”, “abort”, “payout”}, then update st.B[j] ← st.B[j] + bj . Else output ⊥.
+
+State transitions. Prog(j, w, t; st) is defined as follows:  nitialize e ← 0. – If w = (transcript, id, tt, tv, b, σ) and pred(j, w, t; st) = 1: Set st ← (“exec”, id, tt, t, st.L, tv, b, st.B). – Else if w = (message, id, (m, σ)) and pred(j, w, t; st) = 1: Update st.tt ← st.tt‖(m, σ). – Else if w = exit: • If (1) st.mode = “init”, or (2) st.mode = “exec” and |st.tt| = |st.tv|: Set st.mode = “exit”, st.t ← t. • If st.mode = “exec”/“abort”, t > st.t + ∆, st.L[j] = 1, |st.tt| 6 = |st.tv| and j 6 = ja = 1 + |st.tt| mod n: Set e ← nq + st.bj , st.L[j] ← 0, st.L[ja] ← 0 and st.mode ← “abort”. • If st.mode = “exit”/“payout”, and t > st.t + ∆ and st.L[j] = 1: Set e ← (n − 1)q + cash(j, st.tt), st.mode ← “payout”, and st.L[j] ← 0. If at the end of a transition, it holds that st.L[k] = 0 for all k ∈ [n], then we update st.mode ← “inactive”.
+
+
+
+
+Informal description:
+
+The overall structure is similar to the F∗ StCon parameters for F∗ MSFE, and in particular we interpret the state st has having multiple components which keep track of the current mode of the state, the current transcript, the current execution id, time of last exec mode transition, and which parties have already withdrawn money from DynamicStatefulContract. The main addition is now we also explicitly keep track of the transcript validation function of the current execution as part of the state. We denote this variable by st.tv. We also keep track of how much each party deposited in the variable st.B and the latest redistribution of cash (i.e., before st.id-th execution began) in the variable st.b. As with F∗ StCon parameters for F∗ MSFE, here too we make use of a subroutine pred that effectively determines if the trigger witness w extends the state of the current/latest off-chain execution. For the sake of presentation, we allow parties to submit a trigger witness w which extends st.tt. Alternatively, and in cases where st.id does not correspond to the latest execution, we also let parties submit a trigger witness w which provides the entire transcript of an off-chain execution. In this case, pred outputs 1 if the trigger was submitted at time t ≤ st.t + ∆ and if id > st.id or id = st.id but tt is a longer transcript than the (partial) transcript st.tt.
+
+The state transition function Prog will make use of pred described above. If pred outputs 1 then, the contract moves into exec mode and records the trigger time and updates the transcript with the transcript contained in the trigger. If the trigger is a token value exit, then if the current mode is either “init” or “exec” and st.tt is a completed transcript (we check this by checking if |st.tt| = |st.tv|), then we put the contract into exit mode and record the time. The rest of the contract specification is quite similar to the F∗ MSFE case. In particular, when the trigger is a token value w = exit and if t > st.t + ∆ and the triggering party has not yet withdrawn money from DynamicStatefulContract, we move the contract into “payout” or “abort” (depending on the current mode) and refund the deposit (plus current balance plus compensation if applicable) to the triggering party as long as it had not contributed to an off-chain/on-chain aborted execution. To detect whether the triggering party Pj aborted an execution, we simply check if j = 1+|st.tt| mod n and |st.tt| 6 = |st.tv| holds. In this case, we penalize the party by not giving its deposit back but instead distributing it among the remaining parties. This is slightly different from the F∗ MSFE case, where we could potentially penalize multiple corrupt parties depending on whether they contributed their output secret share to the execution. Here, on the other hand, we only penalize one party ja = 1 + |st.tt| mod n. Note that we also redistribute the deposits made by the parties depending on the output of the latest complete execution. If the execution was completed on-chain, then we use the function cashj (which we assume is a part of tv for simplicity) applied on st.tt to determine how much money party Pj is supposed to obtain. On the other hand, if the on-chain execution was also aborted, then (in addition to paying compensation to the honest parties) we distribute the initial deposits depending on the latest balance prior to this execution (which is stored in variable st.bj ).
+Finally, the Update function provides an interface for parties to add coins between different reactive MPCs. Upon receiving a witness u = (b′, ψ, coins(bj )), it checks if the provided coins bj plus the coins already deposited with DynamicStatefulContract (i.e., sum of elements in st.B) matches the amount specified in the balance vector (i.e., sum of elements in b′). Note that the signatures also include the party index j (to avoid situations where a different party abuses the broadcasted signatures). Also, note that the deposits st.B only increase which ensures that there are no replay attacks. This is because once DynamicStatefulContract starts giving back coins (i.e., st.mode ∈ {“payout”, “abort”}), then it does not accept any more coins.
