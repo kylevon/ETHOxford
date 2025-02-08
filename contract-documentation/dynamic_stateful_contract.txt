@@ -7,8 +7,6 @@ Time-dependent transitions in our stateful contract functionality allow us to de
 As is typical in the penalty model, we let parties make an initial deposit to the DynamicStatefulContract.
 Following this, parties together specify a finite state computation denoted Prog along with an initial state st. The functionality then simply waits for a state transition to be triggered by any of the parties. Upon a valid trigger w (i.e., for which Prog produces non-⊥ output), the contract runs Prog on the tuple (j, w, t; st) where j is the index of party Pj who supplies the trigger w at time t, and where st is the current state of Prog. Prog then outputs the current state which will be stored in the variable st and the amount of money e that Pj is supposed to obtain. Both st and e are revealed to all parties (i.e., DynamicStatefulContract has public state), and DynamicStatefulContract will distribute coins(e) to party Pj . The formal description of DynamicStatefulContract is given below. The functionality repeatedly accepts state transitions until it has distributed all the coins that were deposited to it in the initialization phase.
 
-Extra functionality: DynamicStatefulContract accepts coin deposits via an `update` command, even during the execution phase. We note that DynamicStatefulContract is also supported by Ethereum.
-
 
 The parameters taken by this contract are:
 - `sid`: session identifier

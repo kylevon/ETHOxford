@@ -1,15 +1,15 @@
 {
   "_format": "hh-sol-cache-2",
   "files": {
-    "/Users/kyle/external-repos/ETHOxford/contracts/PokerGame.sol": {
-      "lastModificationDate": 1738963244425,
-      "contentHash": "d6c9b488760570ac8496e4dd245c24fd",
-      "sourceName": "contracts/PokerGame.sol",
+    "/home/jonas/Documents/ETHOxford/contracts/DynamicStatefulContract.sol": {
+      "lastModificationDate": 1739021222376,
+      "contentHash": "62f672bd8dab8567aa4c1842d40dcb9e",
+      "sourceName": "contracts/DynamicStatefulContract.sol",
       "solcConfig": {
         "version": "0.8.19",
         "settings": {
           "optimizer": {
-            "enabled": true,
+            "enabled": false,
             "runs": 200
           },
           "outputSelection": {
@@ -33,7 +33,46 @@
         "^0.8.0"
       ],
       "artifacts": [
-        "PokerGame"
+        "DynamicStatefulContract",
+        "IStateTransition"
+      ]
+    },
+    "/home/jonas/Documents/ETHOxford/contracts/MultiplayerPokerGame.sol": {
+      "lastModificationDate": 1739022308124,
+      "contentHash": "923c8e3c1fe842784e7ff0f8a6c9973a",
+      "sourceName": "contracts/MultiplayerPokerGame.sol",
+      "solcConfig": {
+        "version": "0.8.19",
+        "settings": {
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [
+        "./DynamicStatefulContract.sol"
+      ],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "MultiplayerPokerGame",
+        "StateLib"
       ]
     }
   }

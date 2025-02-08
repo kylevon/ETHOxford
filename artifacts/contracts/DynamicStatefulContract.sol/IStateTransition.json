@@ -1,0 +1,84 @@
+{
+  "_format": "hh-sol-artifact-1",
+  "contractName": "IStateTransition",
+  "sourceName": "contracts/DynamicStatefulContract.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "j",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "w",
+          "type": "bytes"
+        },
+        {
+          "internalType": "uint256",
+          "name": "t",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "st",
+          "type": "bytes"
+        }
+      ],
+      "name": "prog",
+      "outputs": [
+        {
+          "internalType": "bytes",
+          "name": "newState",
+          "type": "bytes"
+        },
+        {
+          "internalType": "uint256",
+          "name": "payout",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "j",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "u",
+          "type": "bytes"
+        },
+        {
+          "internalType": "uint256",
+          "name": "t",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes",
+          "name": "st",
+          "type": "bytes"
+        }
+      ],
+      "name": "update",
+      "outputs": [
+        {
+          "internalType": "bytes",
+          "name": "newState",
+          "type": "bytes"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "linkReferences": {},
+  "deployedLinkReferences": {}
+}
