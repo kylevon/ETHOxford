@@ -624,15 +624,6 @@ class _GameScreenState extends State<GameScreen> {
                             Text('Phase: $_phaseText'),
                             if (_isInGame) ...[
                               Text('Role: ${_isFirstPlayer ? "First Player" : "Second Player"}'),
-                              if (_isMyTurn)
-                                const Text(
-                                  'Your Turn!',
-                                  style: TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                ),
                             ],
                           ],
                         ),
