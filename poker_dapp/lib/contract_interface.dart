@@ -449,13 +449,16 @@ class ContractInterface {
       print('Decrypting cards for player: $forPlayer');
       print('Decrypted cards: $decryptedCards');
       
+      // Convert card indices to BigInt
+      final decryptedCardsBigInt = decryptedCards.map((i) => BigInt.from(i)).toList();
+      
       final function = contract!.function('decryptCards');
       final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [decryptedCards, EthereumAddress.fromHex(forPlayer)],
+          parameters: [decryptedCardsBigInt, EthereumAddress.fromHex(forPlayer)],
         ),
         chainId: 31337,
       );
@@ -537,40 +540,84 @@ class ContractInterface {
 
   Future<bool> placeBet(BigInt betAmount) async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+
+      print('Placing bet of $betAmount wei for game $gameId');
       final function = contract!.function('placeBet');
-      final result = await web3client!.sendTransaction(
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [],
+          parameters: [BigInt.from(gameId)],
           value: EtherAmount.fromBigInt(EtherUnit.wei, betAmount),
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully placed bet with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error placing bet: $e');
-      return false;
+      throw Exception('Failed to place bet: $e');
     }
   }
 
   Future<bool> fold() async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+
+      print('Folding in game $gameId');
       final function = contract!.function('fold');
-      final result = await web3client!.sendTransaction(
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [],
+          parameters: [BigInt.from(gameId)],
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully folded with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error folding: $e');
-      return false;
+      throw Exception('Failed to fold: $e');
     }
   }
 

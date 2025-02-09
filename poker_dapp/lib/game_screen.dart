@@ -568,6 +568,124 @@ class GameCardsWidget extends StatelessWidget {
   }
 }
 
+class BettingWidget extends StatefulWidget {
+  final Function(BigInt) onBet;
+  final Function() onFold;
+  final BigInt currentBet;
+  final BigInt pot;
+  final bool isEnabled;
+
+  const BettingWidget({
+    super.key,
+    required this.onBet,
+    required this.onFold,
+    required this.currentBet,
+    required this.pot,
+    this.isEnabled = true,
+  });
+
+  @override
+  State<BettingWidget> createState() => _BettingWidgetState();
+}
+
+class _BettingWidgetState extends State<BettingWidget> {
+  final TextEditingController _betController = TextEditingController();
+  
+  @override
+  void dispose() {
+    _betController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.2),
+            spreadRadius: 1,
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Current Pot: ${widget.pot.toString()} wei',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Current Bet: ${widget.currentBet.toString()} wei',
+            style: const TextStyle(
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _betController,
+                  decoration: const InputDecoration(
+                    labelText: 'Bet Amount (wei)',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  enabled: widget.isEnabled,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: widget.isEnabled ? () {
+                  final betAmount = BigInt.tryParse(_betController.text);
+                  if (betAmount == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Please enter a valid bet amount')),
+                    );
+                    return;
+                  }
+                  if (betAmount < widget.currentBet) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Bet must be at least the current bet amount')),
+                    );
+                    return;
+                  }
+                  widget.onBet(betAmount);
+                  _betController.clear();
+                } : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: const Text('Place Bet'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: widget.isEnabled ? widget.onFold : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text('Fold'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
 
@@ -592,6 +710,8 @@ class _GameScreenState extends State<GameScreen> {
   bool _isMyTurn = false;
   List<int>? playerCards;
   List<int>? communityCards;
+  BigInt? _currentBet;
+  BigInt? _pot;
 
   @override
   void initState() {
@@ -649,6 +769,8 @@ class _GameScreenState extends State<GameScreen> {
             final currentPlayer = gameState['currentPlayer'] as int;
             final isMyTurn = (currentPlayer == 0 && newIsFirstPlayer) || 
                            (currentPlayer == 1 && !newIsFirstPlayer);
+            final newCurrentBet = gameState['currentBet'] as BigInt;
+            final newPot = gameState['pot'] as BigInt;
 
             // Get player's cards if available
             List<int>? newPlayerCards;
@@ -680,6 +802,8 @@ class _GameScreenState extends State<GameScreen> {
                   _isFirstPlayer = newIsFirstPlayer;
                   _phaseText = phaseText;
                   _isMyTurn = isMyTurn;
+                  _currentBet = newCurrentBet;
+                  _pot = newPot;
                   playerCards = newPlayerCards;
                   communityCards = newCommunityCards;
                 });
@@ -767,70 +891,74 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    // Check if it's my turn based on the phase and player role
-    bool shouldShowButton = false;
-    String buttonText = '';
-
-    switch (_currentPhase) {
-      case 0: // Joining
-        shouldShowButton = false;
-        break;
-      case 3: // PreFlopBetting
-      case 5: // FlopBetting
-      case 7: // TurnBetting
-      case 9: // RiverBetting
-        shouldShowButton = _isMyTurn;
-        buttonText = 'Place Bet';
-        break;
-      case 4: // FlopDealing
-      case 6: // TurnDealing
-      case 8: // RiverDealing
-        shouldShowButton = _isFirstPlayer;
-        buttonText = 'Deal Cards';
-        break;
-      default:
-        shouldShowButton = false;
+    // For betting phases
+    if (_isBettingPhase(_currentPhase) && _isMyTurn) {
+      return BettingWidget(
+        onBet: (betAmount) async {
+          try {
+            setState(() => _isLoading = true);
+            await _contractInterface.placeBet(betAmount);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Bet placed successfully!')),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error: $e')),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _isLoading = false);
+            }
+          }
+        },
+        onFold: () async {
+          try {
+            setState(() => _isLoading = true);
+            await _contractInterface.fold();
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Successfully folded')),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error: $e')),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() => _isLoading = false);
+            }
+          }
+        },
+        currentBet: _currentBet ?? BigInt.zero,
+        pot: _pot ?? BigInt.zero,
+        isEnabled: _isMyTurn,
+      );
     }
 
-    if (!shouldShowButton) return const SizedBox.shrink();
+    // For dealing phases
+    if (_isDealingPhase(_currentPhase) && _isFirstPlayer) {
+      return ElevatedButton(
+        onPressed: _handlePhaseAction,
+        child: const Text('Deal Cards'),
+      );
+    }
 
-    return Column(
-      children: [
-        ElevatedButton(
-          onPressed: _handlePhaseAction,
-          child: Text(buttonText),
-        ),
-        if (_isBettingPhase(_currentPhase))
-          ElevatedButton(
-            onPressed: () => _handleFold(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Fold'),
-          ),
-      ],
-    );
+    return const SizedBox.shrink();
   }
 
   bool _isBettingPhase(int phase) {
-    return phase == 9 || phase == 11 || phase == 13 || phase == 15;
+    return phase == 3 || phase == 5 || phase == 7 || phase == 9;
   }
 
-  Future<void> _handleFold() async {
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-      await _contractInterface.fold();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+  bool _isDealingPhase(int phase) {
+    return phase == 4 || phase == 6 || phase == 8;
   }
 
   Future<void> _handlePhaseAction() async {
