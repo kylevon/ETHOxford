@@ -437,8 +437,20 @@ class ContractInterface {
 
   Future<bool> decryptCards(List<int> decryptedCards, String forPlayer) async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+
+      print('Decrypting cards for player: $forPlayer');
+      print('Decrypted cards: $decryptedCards');
+      
       final function = contract!.function('decryptCards');
-      final result = await web3client!.sendTransaction(
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
@@ -447,10 +459,22 @@ class ContractInterface {
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully decrypted cards with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error decrypting cards: $e');
-      return false;
+      throw Exception('Failed to decrypt cards: $e');
     }
   }
 
@@ -580,19 +604,31 @@ class ContractInterface {
       }
 
       try {
-        // Initialize default values for all state slots
-        final communityCards = result[0] as List<dynamic>;
+        // Convert all numeric values safely
+        List<int> convertToIntList(List<dynamic> list) {
+          return list.map((e) => e is BigInt ? e.toInt() : (e is int ? e : 0)).toList();
+        }
+
+        int convertToInt(dynamic value) {
+          return value is BigInt ? value.toInt() : (value is int ? value : 0);
+        }
+
+        final communityCards = convertToIntList(result[0] as List<dynamic>);
         final pot = result[1] as BigInt;
         final currentBet = result[2] as BigInt;
-        final currentPlayer = (result[3] as BigInt).toInt();
+        final currentPlayer = convertToInt(result[3]);
         final roundDeadline = result[4] as BigInt;
-        final phase = (result[5] as BigInt).toInt();
+        final phase = convertToInt(result[5]);
         final firstPlayer = result[6] is EthereumAddress 
             ? result[6] as EthereumAddress 
             : EthereumAddress.fromHex(result[6].toString());
         final lastBetAmount = result[7] as BigInt;
-        final communityCardsDealt = (result[8] as BigInt).toInt();
-        final numPlayers = (result[9] as BigInt).toInt();
+        final communityCardsDealt = convertToInt(result[8]);
+        final numPlayers = convertToInt(result[9]);
+
+        // Get player cards
+        final firstPlayerCards = result.length > 11 ? convertToIntList(result[11] as List<dynamic>) : [];
+        final secondPlayerCards = result.length > 12 ? convertToIntList(result[12] as List<dynamic>) : [];
 
         // Get first player status
         final isFirstPlayerResult = await isFirstPlayer(currentAccount!);
@@ -613,7 +649,9 @@ class ContractInterface {
           'lastBetAmount': lastBetAmount,
           'communityCardsDealt': communityCardsDealt,
           'numPlayers': numPlayers,
-          'isFirstPlayer': isFirstPlayerResult
+          'isFirstPlayer': isFirstPlayerResult,
+          'firstPlayerCards': firstPlayerCards,
+          'secondPlayerCards': secondPlayerCards
         };
       } catch (e) {
         print('Error parsing game state: $e');
