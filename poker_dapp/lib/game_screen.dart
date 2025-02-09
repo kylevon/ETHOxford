@@ -209,7 +209,7 @@ class _CardDeckWidgetState extends State<CardDeckWidget> {
 }
 
 class CardSelectionWidget extends StatefulWidget {
-  final Function(List<int>) onSubmit;
+  final Function(List<int>, List<int>, List<int>, int) onSubmit;
   final bool isEnabled;
 
   const CardSelectionWidget({
@@ -223,7 +223,53 @@ class CardSelectionWidget extends StatefulWidget {
 }
 
 class _CardSelectionWidgetState extends State<CardSelectionWidget> {
-  List<int> selectedCards = [];
+  List<int> firstPlayerCards = [];
+  List<int> secondPlayerCards = [];
+  List<int> flopCards = [];
+  final TextEditingController _seedController = TextEditingController();
+  bool isFirstPlayerCardsSelected = false;
+  bool isSecondPlayerCardsSelected = false;
+  bool isFlopCardsSelected = false;
+
+  @override
+  void dispose() {
+    _seedController.dispose();
+    super.dispose();
+  }
+
+  void selectCard(int index, String type) {
+    setState(() {
+      switch (type) {
+        case 'first_player':
+          if (firstPlayerCards.contains(index)) {
+            firstPlayerCards.remove(index);
+          } else if (firstPlayerCards.length < 2) {
+            firstPlayerCards.add(index);
+          }
+          break;
+        case 'second_player':
+          if (secondPlayerCards.contains(index)) {
+            secondPlayerCards.remove(index);
+          } else if (secondPlayerCards.length < 2) {
+            secondPlayerCards.add(index);
+          }
+          break;
+        case 'flop':
+          if (flopCards.contains(index)) {
+            flopCards.remove(index);
+          } else if (flopCards.length < 5) {
+            flopCards.add(index);
+          }
+          break;
+      }
+    });
+  }
+
+  void generateRandomSeed() {
+    final random = Random.secure();
+    final seed = random.nextInt(1000000); // Generate a random 6-digit number
+    _seedController.text = seed.toString();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -233,105 +279,207 @@ class _CardSelectionWidgetState extends State<CardSelectionWidget> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'Select Two Encrypted Cards',
+            'Select Cards',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'These cards are encrypted by the first player. Select two cards that will be revealed to you after decryption.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _seedController,
+                  decoration: const InputDecoration(
+                    labelText: 'Encryption Seed',
+                    hintText: 'Enter a number for encryption',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: generateRandomSeed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                ),
+                child: const Text('Generate Random Seed'),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          Flexible(
-            child: GridView.builder(
-              shrinkWrap: true,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 13,
-                childAspectRatio: 0.7,
-                crossAxisSpacing: 4,
-                mainAxisSpacing: 4,
+          // First Player Card Selection
+          Column(
+            children: [
+              const Text(
+                'Select 2 Cards for First Player (Unencrypted)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              itemCount: 52,
-              itemBuilder: (context, index) {
-                final isSelected = selectedCards.contains(index);
-                return GestureDetector(
-                  onTap: widget.isEnabled ? () {
-                    setState(() {
-                      if (isSelected) {
-                        selectedCards.remove(index);
-                      } else if (selectedCards.length < 2) {
-                        selectedCards.add(index);
-                      }
-                    });
-                  } : null,
-                  child: Card(
-                    color: isSelected ? Colors.blue.shade200 : Colors.blue.shade50,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Icon(
-                          Icons.lock,
-                          color: isSelected ? Colors.blue.shade800 : Colors.blue.shade300,
-                          size: 24,
-                        ),
-                        if (isSelected)
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade800,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                '${selectedCards.indexOf(index) + 1}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 120,
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 13,
+                    childAspectRatio: 0.7,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: 52,
+                  itemBuilder: (context, index) {
+                    final isSelected = firstPlayerCards.contains(index);
+                    return GestureDetector(
+                      onTap: widget.isEnabled ? () => selectCard(index, 'first_player') : null,
+                      child: Card(
+                        color: isSelected ? Colors.green.shade200 : Colors.white,
+                        child: Center(
+                          child: Text(
+                            getCardString(index),
+                            style: TextStyle(
+                              color: getCardColor(index),
+                              fontSize: 12,
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Second Player Card Selection
+          Column(
+            children: [
+              const Text(
+                'Select 2 Cards for Yourself (Will be Encrypted)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 120,
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 13,
+                    childAspectRatio: 0.7,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
                   ),
-                );
-              },
-            ),
+                  itemCount: 52,
+                  itemBuilder: (context, index) {
+                    final isSelected = secondPlayerCards.contains(index);
+                    return GestureDetector(
+                      onTap: widget.isEnabled ? () => selectCard(index, 'second_player') : null,
+                      child: Card(
+                        color: isSelected ? Colors.blue.shade200 : Colors.white,
+                        child: Center(
+                          child: Text(
+                            getCardString(index),
+                            style: TextStyle(
+                              color: getCardColor(index),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Flop Card Selection
+          Column(
+            children: [
+              const Text(
+                'Select 5 Cards for Flop (Will be Encrypted)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 120,
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 13,
+                    childAspectRatio: 0.7,
+                    crossAxisSpacing: 4,
+                    mainAxisSpacing: 4,
+                  ),
+                  itemCount: 52,
+                  itemBuilder: (context, index) {
+                    final isSelected = flopCards.contains(index);
+                    return GestureDetector(
+                      onTap: widget.isEnabled ? () => selectCard(index, 'flop') : null,
+                      child: Card(
+                        color: isSelected ? Colors.purple.shade200 : Colors.white,
+                        child: Center(
+                          child: Text(
+                            getCardString(index),
+                            style: TextStyle(
+                              color: getCardColor(index),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Selected: ${selectedCards.length}/2 cards',
+                'Selected: ${firstPlayerCards.length}/2 first player, ${secondPlayerCards.length}/2 second player, ${flopCards.length}/5 flop',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(width: 16),
-              ElevatedButton(
-                onPressed: widget.isEnabled && selectedCards.length == 2 
-                  ? () => widget.onSubmit(selectedCards) 
-                  : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-                child: const Text(
-                  'Submit Selected Cards',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
             ],
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: widget.isEnabled && 
+                      firstPlayerCards.length == 2 && 
+                      secondPlayerCards.length == 2 && 
+                      flopCards.length == 5 &&
+                      _seedController.text.isNotEmpty
+                ? () {
+                    final seed = int.parse(_seedController.text);
+                    widget.onSubmit(firstPlayerCards, secondPlayerCards, flopCards, seed);
+                  }
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: const Text(
+              'Submit Selected Cards',
+              style: TextStyle(fontSize: 16),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  String getCardString(int cardIndex) {
+    final suits = ['♠', '♣', '♥', '♦'];
+    final values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    
+    final suit = suits[cardIndex ~/ 13];
+    final value = values[cardIndex % 13];
+    
+    return '$value$suit';
+  }
+
+  Color getCardColor(int cardIndex) {
+    return cardIndex ~/ 13 >= 2 ? Colors.red : Colors.black;
   }
 }
 
@@ -484,14 +632,13 @@ class _GameScreenState extends State<GameScreen> {
           maxHeight: MediaQuery.of(context).size.height * 0.8,
         ),
         child: CardSelectionWidget(
-          onSubmit: (selectedIndices) async {
+          onSubmit: (firstPlayerCards, secondPlayerCards, flopCards, seed) async {
             try {
               setState(() => _isLoading = true);
-              final gameId = await _contractInterface.getPlayerGameId(_contractInterface.currentAccount!);
-              await _contractInterface.selectCards([gameId, ...selectedIndices]);
+              await _contractInterface.selectCards(firstPlayerCards, secondPlayerCards, flopCards, seed);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Cards selected! Waiting for first player to decrypt them...')),
+                  const SnackBar(content: Text('Cards selected successfully!')),
                 );
               }
             } catch (e) {
@@ -510,103 +657,6 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    // For the first player decryption phase
-    if (_currentPhase == 3 && _isFirstPlayer) {
-      return Container(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Second Player Selected Two Cards',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'The second player has selected two cards from your encrypted deck. Please decrypt them.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 16),
-            // Show the selected cards
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Card(
-                  color: Colors.white,
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    child: const Text(
-                      '2♠', // This will be replaced with actual card
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Card(
-                  color: Colors.white,
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    child: const Text(
-                      '3♥', // This will be replaced with actual card
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.red,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () async {
-                try {
-                  setState(() => _isLoading = true);
-                  // Identity decryption - just use the selected indices directly
-                  final gameId = await _contractInterface.getPlayerGameId(_contractInterface.currentAccount!);
-                  final gameState = await _contractInterface.getGameState();
-                  if (gameState != null) {
-                    // Get the selected cards from the game state
-                    // For now, using dummy values [0, 1] since we don't have access to the selected cards
-                    final decryptedCards = [0, 1];
-                    await _contractInterface.decryptCards(decryptedCards, _contractInterface.currentAccount!);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Cards decrypted successfully!')),
-                      );
-                    }
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: $e')),
-                    );
-                  }
-                } finally {
-                  if (mounted) {
-                    setState(() => _isLoading = false);
-                  }
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              ),
-              child: const Text(
-                'Decrypt Selected Cards',
-                style: TextStyle(fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     // Check if it's my turn based on the phase and player role
     bool shouldShowButton = false;
     String buttonText = '';
@@ -615,44 +665,16 @@ class _GameScreenState extends State<GameScreen> {
       case 0: // Joining
         shouldShowButton = false;
         break;
-      case 2: // SecondPlayerCardSelection
-        shouldShowButton = !_isFirstPlayer;
-        buttonText = 'Select Cards';
-        break;
-      case 3: // FirstPlayerDecryption
-        shouldShowButton = _isFirstPlayer;
-        buttonText = 'Decrypt Cards';
-        break;
-      case 4: // SecondPlayerCardEncryption
-        shouldShowButton = !_isFirstPlayer;
-        buttonText = 'Encrypt Cards';
-        break;
-      case 5: // FirstPlayerCardDecryption
-        shouldShowButton = _isFirstPlayer;
-        buttonText = 'Decrypt Own Cards';
-        break;
-      case 6: // SecondPlayerOwnCardSelection
-        shouldShowButton = !_isFirstPlayer;
-        buttonText = 'Select Own Cards';
-        break;
-      case 7: // SecondPlayerDeckSort
-        shouldShowButton = !_isFirstPlayer;
-        buttonText = 'Submit Sorted Deck';
-        break;
-      case 8: // DeckEncryption
-        shouldShowButton = !_isFirstPlayer;
-        buttonText = 'Submit Final Encryption';
-        break;
-      case 9: // PreFlopBetting
-      case 11: // FlopBetting
-      case 13: // TurnBetting
-      case 15: // RiverBetting
+      case 3: // PreFlopBetting
+      case 5: // FlopBetting
+      case 7: // TurnBetting
+      case 9: // RiverBetting
         shouldShowButton = _isMyTurn;
         buttonText = 'Place Bet';
         break;
-      case 10: // FlopDealing
-      case 12: // TurnDealing
-      case 14: // RiverDealing
+      case 4: // FlopDealing
+      case 6: // TurnDealing
+      case 8: // RiverDealing
         shouldShowButton = _isFirstPlayer;
         buttonText = 'Deal Cards';
         break;
@@ -714,76 +736,25 @@ class _GameScreenState extends State<GameScreen> {
             // Generate a random deck of 52 cards
             final random = Random.secure();
             final encryptedDeck = List<int>.generate(52, (i) => i)..shuffle(random);
-            print('Generated encrypted deck: $encryptedDeck');
-            try {
-              await _contractInterface.submitEncryptedDeck(encryptedDeck);
-              print('Successfully submitted encrypted deck');
-            } catch (e) {
-              print('Error submitting encrypted deck: $e');
-              rethrow;
-            }
+            await _contractInterface.submitEncryptedDeck(encryptedDeck);
           }
           break;
         case 2: // Second Player Card Selection
           if (!_isFirstPlayer) {
-            // TODO: Implement proper card selection
-            final selectedCards = [0, 1];
-            await _contractInterface.selectCards(selectedCards);
+            // This will be handled by the CardSelectionWidget
+            // The widget will call selectCards with the appropriate parameters
           }
           break;
-        case 3: // First Player Decryption
-          if (_isFirstPlayer) {
-            // TODO: Implement proper decryption
-            final decryptedCards = [0, 1];
-            await _contractInterface.decryptCards(decryptedCards, _contractInterface.currentAccount!);
-          }
-          break;
-        case 4: // Second Player Card Encryption
-          if (!_isFirstPlayer) {
-            // TODO: Implement proper encryption
-            final encryptedCards = [0, 1];
-            await _contractInterface.submitEncryptedDeck(encryptedCards);
-          }
-          break;
-        case 5: // First Player Card Decryption
-          if (_isFirstPlayer) {
-            // TODO: Implement proper decryption
-            final decryptedCards = [0, 1];
-            await _contractInterface.decryptCards(decryptedCards, _contractInterface.currentAccount!);
-          }
-          break;
-        case 6: // Second Player Own Card Selection
-          if (!_isFirstPlayer) {
-            // TODO: Implement proper card selection
-            final selectedCards = [0, 1];
-            await _contractInterface.selectOwnCards(selectedCards);
-          }
-          break;
-        case 7: // Second Player Deck Sort
-          if (!_isFirstPlayer) {
-            // TODO: Implement proper deck sorting
-            final sortedDeck = List<int>.generate(52, (i) => i);
-            await _contractInterface.submitSortedDeck(sortedDeck);
-          }
-          break;
-        case 8: // Deck Encryption
-          if (!_isFirstPlayer) {
-            // TODO: Implement proper encryption
-            final encryptedDeck = List<int>.generate(52, (i) => i);
-            await _contractInterface.submitEncryptedDeck(encryptedDeck);
-          }
-          break;
-        case 9: // Pre-Flop Betting
-        case 11: // Flop Betting
-        case 13: // Turn Betting
-        case 15: // River Betting
-          // TODO: Implement proper betting
+        case 3: // PreFlopBetting
+        case 5: // FlopBetting
+        case 7: // TurnBetting
+        case 9: // RiverBetting
           final betAmount = BigInt.from(100000000000000000); // 0.1 ETH
           await _contractInterface.placeBet(betAmount);
           break;
-        case 10: // Flop Dealing
-        case 12: // Turn Dealing
-        case 14: // River Dealing
+        case 4: // FlopDealing
+        case 6: // TurnDealing
+        case 8: // RiverDealing
           if (_isFirstPlayer) {
             await _contractInterface.dealCommunityCards();
           }

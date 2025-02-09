@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/kyle/external-repos/ETHOxford/contracts/PokerGame.sol": {
-      "lastModificationDate": 1739039055107,
-      "contentHash": "78cf095ace9037c3657ac64c6f73cc90",
+      "lastModificationDate": 1739064220871,
+      "contentHash": "bb0a87afb6632c7d6bb7d311b11a8af3",
       "sourceName": "contracts/PokerGame.sol",
       "solcConfig": {
         "version": "0.8.19",
@@ -12,6 +12,7 @@
             "enabled": true,
             "runs": 200
           },
+          "viaIR": true,
           "outputSelection": {
             "*": {
               "*": [

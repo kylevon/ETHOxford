@@ -9,7 +9,8 @@ module.exports = {
       optimizer: {
         enabled: true,
         runs: 200
-      }
+      },
+      viaIR: true
     }
   },
   networks: {
@@ -17,7 +18,8 @@ module.exports = {
       mining: {
         auto: true,
         interval: 1000
-      }
+      },
+      chainId: 31337
     },
     // Add other networks as needed
   }

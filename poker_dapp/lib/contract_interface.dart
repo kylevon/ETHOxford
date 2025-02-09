@@ -243,7 +243,9 @@ class ContractInterface {
       }
       
       // Get current first player if any
-      final currentFirstPlayer = result[6] as EthereumAddress;
+      final currentFirstPlayer = result[6] is EthereumAddress 
+          ? result[6] as EthereumAddress 
+          : EthereumAddress.fromHex('0x0000000000000000000000000000000000000000');
       print('Current first player in game: ${currentFirstPlayer.hex}');
       
       print('Joining game with ID: $gameId');
@@ -328,11 +330,32 @@ class ContractInterface {
       if (gameId == 0) {
         throw Exception('No active game found');
       }
+
+      // Log game state before submission
+      final gameState = await getGameState();
+      print('Game state before submission:');
+      print('- Game ID: $gameId');
+      print('- Phase: ${gameState?['phase']}');
+      print('- First Player: ${gameState?['firstPlayer']}');
+      print('- Current Account: $currentAccount');
+      print('- Is First Player: ${await isFirstPlayer(currentAccount!)}');
+      
       print('Submitting encrypted deck for game $gameId: $encryptedDeck');
       final function = contract!.function('submitEncryptedDeck');
       
-      // Convert the list of ints to BigInts
+      // Print function details
+      print('Function details:');
+      print('- Name: ${function.name}');
+      print('- Inputs: ${function.parameters.map((p) => '${p.name}: ${p.type}').join(', ')}');
+      print('- Outputs: ${function.outputs.map((p) => '${p.name}: ${p.type}').join(', ')}');
+      
+      // Convert the list of ints to BigInts with proper uint256 values
       final encryptedDeckBigInt = encryptedDeck.map((i) => BigInt.from(i)).toList();
+      
+      // Print parameters being sent
+      print('Sending parameters:');
+      print('- gameId: ${BigInt.from(gameId)}');
+      print('- encryptedDeck: $encryptedDeckBigInt');
       
       final transaction = await web3client!.sendTransaction(
         credentials,
@@ -362,22 +385,53 @@ class ContractInterface {
     }
   }
 
-  Future<bool> selectCards(List<int> selectedIndices) async {
+  Future<bool> selectCards(List<int> firstPlayerCards, List<int> secondPlayerCards, List<int> flopCards, int encryptionSeed) async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+      print('Selecting cards for game $gameId:');
+      print('First player cards: $firstPlayerCards');
+      print('Second player cards: $secondPlayerCards');
+      print('Flop cards: $flopCards');
+      print('Encryption seed: $encryptionSeed');
+      
       final function = contract!.function('selectCards');
-      final result = await web3client!.sendTransaction(
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [selectedIndices],
+          parameters: [
+            BigInt.from(gameId),
+            firstPlayerCards.map((i) => BigInt.from(i)).toList(),
+            secondPlayerCards.map((i) => BigInt.from(i)).toList(),
+            flopCards.map((i) => BigInt.from(i)).toList(),
+            BigInt.from(encryptionSeed)
+          ],
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully selected cards with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error selecting cards: $e');
-      return false;
+      throw Exception('Failed to select cards: $e');
     }
   }
 
@@ -511,43 +565,11 @@ class ContractInterface {
       }
 
       // Get game state using getGameState function
-      ContractFunction? gameStateFunction;
-      try {
-        // Try to find the function in the ABI
-        final abiString = await rootBundle.loadString('assets/PokerGame.json');
-        final abiJson = jsonDecode(abiString);
-        final abi = abiJson['abi'] as List<dynamic>;
-        
-        // Find the getGameState function in the ABI
-        final getGameStateAbi = abi.firstWhere(
-          (item) => item['type'] == 'function' && item['name'] == 'getGameState',
-          orElse: () => throw Exception('getGameState not found in ABI'),
-        );
-        
-        print('Found getGameState in ABI: ${jsonEncode(getGameStateAbi)}');
-        
-        // Create a new contract instance with this ABI
-        final parsedAbi = ContractAbi.fromJson(jsonEncode([getGameStateAbi]), 'PokerGame');
-        final tempContract = DeployedContract(
-          parsedAbi,
-          EthereumAddress.fromHex(Config.contractAddress),
-        );
-        
-        gameStateFunction = tempContract.function('getGameState');
-        print('Successfully created getGameState function');
-      } catch (e) {
-        print('Error finding getGameState function: $e');
-        print('Available functions:');
-        for (var function in contract!.functions) {
-          print('- ${function.name}');
-        }
-        return null;
-      }
-
+      final function = contract!.function('getGameState');
       print('Calling getGameState for game $playerGameId');
       final result = await web3client!.call(
         contract: contract!,
-        function: gameStateFunction,
+        function: function,
         params: [BigInt.from(playerGameId)],
       );
 
@@ -557,44 +579,47 @@ class ContractInterface {
         return null;
       }
 
-      final communityCards = result[0] as List<dynamic>;
-      final pot = result[1] as BigInt;
-      final currentBet = result[2] as BigInt;
-      final currentPlayer = (result[3] as BigInt).toInt();
-      final roundDeadline = result[4] as BigInt;
-      final phase = (result[5] as BigInt).toInt();
-      final firstPlayer = result[6] as EthereumAddress;
-      final lastBetAmount = result[7] as BigInt;
-      final communityCardsDealt = (result[8] as BigInt).toInt();
-      final numPlayers = (result[9] as BigInt).toInt();
+      try {
+        // Initialize default values for all state slots
+        final communityCards = result[0] as List<dynamic>;
+        final pot = result[1] as BigInt;
+        final currentBet = result[2] as BigInt;
+        final currentPlayer = (result[3] as BigInt).toInt();
+        final roundDeadline = result[4] as BigInt;
+        final phase = (result[5] as BigInt).toInt();
+        final firstPlayer = result[6] is EthereumAddress 
+            ? result[6] as EthereumAddress 
+            : EthereumAddress.fromHex(result[6].toString());
+        final lastBetAmount = result[7] as BigInt;
+        final communityCardsDealt = (result[8] as BigInt).toInt();
+        final numPlayers = (result[9] as BigInt).toInt();
 
-      // Use contract's isFirstPlayer function directly
-      final isFirstPlayerFunction = contract!.function('isFirstPlayer');
-      final isFirstPlayerResult = await web3client!.call(
-        contract: contract!,
-        function: isFirstPlayerFunction,
-        params: [EthereumAddress.fromHex(currentAccount!)],
-      );
-      final isFirstPlayer = isFirstPlayerResult[0] as bool;
+        // Get first player status
+        final isFirstPlayerResult = await isFirstPlayer(currentAccount!);
 
-      print('First player in game $playerGameId: ${firstPlayer.hex}');
-      print('Current player (${currentAccount!}) is first player: $isFirstPlayer');
-      print('Number of players: $numPlayers');
+        print('First player in game $playerGameId: ${firstPlayer.hex}');
+        print('Current player (${currentAccount!}) is first player: $isFirstPlayerResult');
+        print('Number of players: $numPlayers');
 
-      return {
-        'gameId': playerGameId,
-        'communityCards': communityCards,
-        'pot': pot,
-        'currentBet': currentBet,
-        'currentPlayer': currentPlayer,
-        'roundDeadline': roundDeadline,
-        'phase': phase,
-        'firstPlayer': firstPlayer,
-        'lastBetAmount': lastBetAmount,
-        'communityCardsDealt': communityCardsDealt,
-        'numPlayers': numPlayers,
-        'isFirstPlayer': isFirstPlayer
-      };
+        return {
+          'gameId': playerGameId,
+          'communityCards': communityCards,
+          'pot': pot,
+          'currentBet': currentBet,
+          'currentPlayer': currentPlayer,
+          'roundDeadline': roundDeadline,
+          'phase': phase,
+          'firstPlayer': firstPlayer,
+          'lastBetAmount': lastBetAmount,
+          'communityCardsDealt': communityCardsDealt,
+          'numPlayers': numPlayers,
+          'isFirstPlayer': isFirstPlayerResult
+        };
+      } catch (e) {
+        print('Error parsing game state: $e');
+        print('Raw result was: $result');
+        return null;
+      }
     } catch (e, stackTrace) {
       print('Error getting game state: $e');
       print('Stack trace: $stackTrace');
@@ -641,37 +666,46 @@ class ContractInterface {
       case 1:
         return 'First Player Encryption';
       case 2:
-        return 'Second Player Card Selection';
+        return 'Second Player Selection';
       case 3:
-        return 'First Player Decryption';
-      case 4:
-        return 'Second Player Card Encryption';
-      case 5:
-        return 'First Player Card Decryption';
-      case 6:
-        return 'Second Player Own Card Selection';
-      case 7:
-        return 'Second Player Deck Sort';
-      case 8:
-        return 'Deck Encryption';
-      case 9:
         return 'Pre-Flop Betting';
-      case 10:
+      case 4:
         return 'Flop Dealing';
-      case 11:
+      case 5:
         return 'Flop Betting';
-      case 12:
+      case 6:
         return 'Turn Dealing';
-      case 13:
+      case 7:
         return 'Turn Betting';
-      case 14:
+      case 8:
         return 'River Dealing';
-      case 15:
+      case 9:
         return 'River Betting';
-      case 16:
+      case 10:
         return 'Showdown';
       default:
         return 'Unknown Phase';
+    }
+  }
+
+  Future<bool> isFirstPlayer(String address) async {
+    try {
+      if (!isInitialized) {
+        return false;
+      }
+      final function = contract!.function('isFirstPlayer');
+      final result = await web3client!.call(
+        contract: contract!,
+        function: function,
+        params: [EthereumAddress.fromHex(address)],
+      );
+      if (result.isEmpty) {
+        return false;
+      }
+      return result[0] as bool;
+    } catch (e) {
+      print('Error checking if player is first player: $e');
+      return false;
     }
   }
 } 
