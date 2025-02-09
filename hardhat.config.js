@@ -17,7 +17,7 @@ module.exports = {
     hardhat: {
       mining: {
         auto: true,
-        interval: 1000
+        interval: [1000, 3000]  // Random interval between 1-3 seconds
       },
       chainId: 31337
     },

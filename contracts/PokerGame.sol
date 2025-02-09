@@ -29,6 +29,9 @@ contract PokerGame {
         uint256 encryptionSeed;       // Encryption seed for second player
         Player[] players;             // Array of players in the game
         mapping(address => uint256) bets;
+        mapping(address => bool) hasDecryptedFlop;  // Track who has decrypted flop
+        mapping(address => bool) hasDecryptedTurn;  // Track who has decrypted turn
+        mapping(address => bool) hasDecryptedRiver; // Track who has decrypted river
     }
 
     enum GamePhase {
@@ -36,11 +39,11 @@ contract PokerGame {
         FirstPlayerEncryption,  // First player encrypts and submits the deck
         SecondPlayerSelection,  // Second player selects cards
         PreFlopBetting,        // Pre-flop betting round
-        FlopDealing,           // Dealing the flop
+        FlopDecryption,        // Both players decrypt flop cards
         FlopBetting,           // Flop betting round
-        TurnDealing,           // Dealing the turn
+        TurnDecryption,        // Both players decrypt turn card
         TurnBetting,           // Turn betting round
-        RiverDealing,          // Dealing the river
+        RiverDecryption,       // Both players decrypt river card
         RiverBetting,          // River betting round
         Showdown              // Show cards and determine winner
     }
@@ -138,6 +141,26 @@ contract PokerGame {
         require(playerGameId[msg.sender] == gameId, "Not in this game");
         require(games[gameId].phase == GamePhase.SecondPlayerSelection, "Wrong phase");
         require(msg.sender != games[gameId].firstPlayer, "Not second player");
+        require(games[gameId].encryptedDeck.length == 52, "No encrypted deck available");
+
+        // Verify that selected cards are from the encrypted deck
+        for(uint8 i = 0; i < 2; i++) {
+            bool foundFirst = false;
+            bool foundSecond = false;
+            for(uint8 j = 0; j < 52; j++) {
+                if(uint8(games[gameId].encryptedDeck[j]) == _firstPlayerCards[i]) foundFirst = true;
+                if(uint8(games[gameId].encryptedDeck[j]) == _secondPlayerCards[i]) foundSecond = true;
+            }
+            require(foundFirst && foundSecond, "Selected cards not in encrypted deck");
+        }
+
+        for(uint8 i = 0; i < 5; i++) {
+            bool foundFlop = false;
+            for(uint8 j = 0; j < 52; j++) {
+                if(uint8(games[gameId].encryptedDeck[j]) == _flopCards[i]) foundFlop = true;
+            }
+            require(foundFlop, "Selected flop card not in encrypted deck");
+        }
 
         games[gameId].firstPlayerCards = _firstPlayerCards;
         games[gameId].secondPlayerCards = _secondPlayerCards;
@@ -170,7 +193,7 @@ contract PokerGame {
         require(gameId > 0, "Not in a game");
         require(
             (games[gameId].phase == GamePhase.PreFlopBetting && forPlayer != games[gameId].firstPlayer) ||
-            (games[gameId].phase == GamePhase.FlopDealing && forPlayer == games[gameId].firstPlayer),
+            (games[gameId].phase == GamePhase.FlopDecryption && forPlayer == games[gameId].firstPlayer),
             "Wrong phase or player"
         );
         
@@ -178,9 +201,9 @@ contract PokerGame {
         targetPlayer.hand = decryptedCards;
         
         if (games[gameId].phase == GamePhase.PreFlopBetting) {
-            games[gameId].phase = GamePhase.FlopDealing;
+            games[gameId].phase = GamePhase.FlopDecryption;
         } else {
-            games[gameId].phase = GamePhase.FlopBetting;
+            games[gameId].phase = GamePhase.TurnDecryption;
         }
         
         emit CardsDecrypted(gameId, msg.sender);
@@ -217,28 +240,99 @@ contract PokerGame {
         require(playerGameId[msg.sender] == gameId, "Not in this game");
         require(msg.sender == games[gameId].firstPlayer, "Not first player");
         require(
-            games[gameId].phase == GamePhase.FlopDealing ||
-            games[gameId].phase == GamePhase.TurnDealing ||
-            games[gameId].phase == GamePhase.RiverDealing,
-            "Not dealing phase"
+            games[gameId].phase == GamePhase.FlopDecryption ||
+            games[gameId].phase == GamePhase.TurnDecryption ||
+            games[gameId].phase == GamePhase.RiverDecryption,
+            "Not decryption phase"
         );
 
         // Update game phase based on current phase
-        if (games[gameId].phase == GamePhase.FlopDealing) {
+        if (games[gameId].phase == GamePhase.FlopDecryption) {
             games[gameId].phase = GamePhase.FlopBetting;
             games[gameId].communityCardsDealt = 3;
-        } else if (games[gameId].phase == GamePhase.TurnDealing) {
+        } else if (games[gameId].phase == GamePhase.TurnDecryption) {
             games[gameId].phase = GamePhase.TurnBetting;
             games[gameId].communityCardsDealt = 4;
-        } else if (games[gameId].phase == GamePhase.RiverDealing) {
+        } else if (games[gameId].phase == GamePhase.RiverDecryption) {
             games[gameId].phase = GamePhase.RiverBetting;
             games[gameId].communityCardsDealt = 5;
         }
-
-        games[gameId].currentPlayer = 1; // Second player starts betting
-        games[gameId].currentBet = 0;
         
         emit CommunityCardsDealt(gameId, games[gameId].communityCardsDealt);
+    }
+
+    function decryptCommunityCards(uint256 gameId, uint8[] memory decryptedCards) external {
+        require(isPlayerInGame(msg.sender), "Not in game");
+        require(playerGameId[msg.sender] == gameId, "Not in this game");
+        require(
+            games[gameId].phase == GamePhase.FlopDecryption ||
+            games[gameId].phase == GamePhase.TurnDecryption ||
+            games[gameId].phase == GamePhase.RiverDecryption,
+            "Not decryption phase"
+        );
+
+        // Store decrypted cards based on the phase
+        if (games[gameId].phase == GamePhase.FlopDecryption) {
+            require(decryptedCards.length == 3, "Invalid flop cards count");
+            require(!games[gameId].hasDecryptedFlop[msg.sender], "Already decrypted flop");
+            if (msg.sender == games[gameId].firstPlayer) {
+                for(uint8 i = 0; i < 3; i++) {
+                    games[gameId].communityCards[i] = decryptedCards[i];
+                }
+            }
+            games[gameId].hasDecryptedFlop[msg.sender] = true;
+        } else if (games[gameId].phase == GamePhase.TurnDecryption) {
+            require(decryptedCards.length == 1, "Invalid turn card count");
+            require(!games[gameId].hasDecryptedTurn[msg.sender], "Already decrypted turn");
+            if (msg.sender == games[gameId].firstPlayer) {
+                games[gameId].communityCards[3] = decryptedCards[0];
+            }
+            games[gameId].hasDecryptedTurn[msg.sender] = true;
+        } else if (games[gameId].phase == GamePhase.RiverDecryption) {
+            require(decryptedCards.length == 1, "Invalid river card count");
+            require(!games[gameId].hasDecryptedRiver[msg.sender], "Already decrypted river");
+            if (msg.sender == games[gameId].firstPlayer) {
+                games[gameId].communityCards[4] = decryptedCards[0];
+            }
+            games[gameId].hasDecryptedRiver[msg.sender] = true;
+        }
+
+        // Check if both players have decrypted
+        bool bothDecrypted = false;
+        if (games[gameId].phase == GamePhase.FlopDecryption) {
+            bothDecrypted = games[gameId].hasDecryptedFlop[games[gameId].firstPlayer] &&
+                           games[gameId].hasDecryptedFlop[games[gameId].players[1].addr];
+            if (bothDecrypted) {
+                games[gameId].communityCardsDealt = 3;
+            }
+        } else if (games[gameId].phase == GamePhase.TurnDecryption) {
+            bothDecrypted = games[gameId].hasDecryptedTurn[games[gameId].firstPlayer] &&
+                           games[gameId].hasDecryptedTurn[games[gameId].players[1].addr];
+            if (bothDecrypted) {
+                games[gameId].communityCardsDealt = 4;
+            }
+        } else if (games[gameId].phase == GamePhase.RiverDecryption) {
+            bothDecrypted = games[gameId].hasDecryptedRiver[games[gameId].firstPlayer] &&
+                           games[gameId].hasDecryptedRiver[games[gameId].players[1].addr];
+            if (bothDecrypted) {
+                games[gameId].communityCardsDealt = 5;
+            }
+        }
+
+        // Move to betting phase after both players have decrypted
+        if (bothDecrypted) {
+            if (games[gameId].phase == GamePhase.FlopDecryption) {
+                games[gameId].phase = GamePhase.FlopBetting;
+            } else if (games[gameId].phase == GamePhase.TurnDecryption) {
+                games[gameId].phase = GamePhase.TurnBetting;
+            } else if (games[gameId].phase == GamePhase.RiverDecryption) {
+                games[gameId].phase = GamePhase.RiverBetting;
+            }
+            games[gameId].currentPlayer = 1; // Second player starts betting
+            games[gameId].currentBet = 0;
+        }
+        
+        emit CardsDecrypted(gameId, msg.sender);
     }
 
     function placeBet(uint256 gameId) external payable {
@@ -334,11 +428,11 @@ contract PokerGame {
 
     function moveToNextPhase(uint256 gameId) private {
         if (games[gameId].phase == GamePhase.PreFlopBetting) {
-            games[gameId].phase = GamePhase.FlopDealing;
+            games[gameId].phase = GamePhase.FlopDecryption;
         } else if (games[gameId].phase == GamePhase.FlopBetting) {
-            games[gameId].phase = GamePhase.TurnDealing;
+            games[gameId].phase = GamePhase.TurnDecryption;
         } else if (games[gameId].phase == GamePhase.TurnBetting) {
-            games[gameId].phase = GamePhase.RiverDealing;
+            games[gameId].phase = GamePhase.RiverDecryption;
         } else if (games[gameId].phase == GamePhase.RiverBetting) {
             games[gameId].phase = GamePhase.Showdown;
         }
@@ -346,8 +440,7 @@ contract PokerGame {
         games[gameId].lastBetAmount = 0;
     }
 
-    function getGameState(uint256 gameId) external view returns (
-        uint8[5] memory communityCards,
+    function getGameBasicState(uint256 gameId) external view returns (
         uint256 pot,
         uint256 currentBet,
         uint8 currentPlayer,
@@ -356,15 +449,10 @@ contract PokerGame {
         address firstPlayer,
         uint256 lastBetAmount,
         uint8 communityCardsDealt,
-        uint256 numPlayers,
-        uint256[] memory encryptedDeck,
-        uint8[2] memory firstPlayerCards,
-        uint8[2] memory secondPlayerCards,
-        uint8[5] memory encryptedFlopCards
+        uint8 numPlayers
     ) {
         GameState storage game = games[gameId];
         return (
-            game.communityCards,
             game.pot,
             game.currentBet,
             game.currentPlayer,
@@ -373,12 +461,53 @@ contract PokerGame {
             game.firstPlayer,
             game.lastBetAmount,
             game.communityCardsDealt,
-            game.players.length,
-            game.encryptedDeck,
-            game.firstPlayerCards,
-            game.secondPlayerCards,
-            game.encryptedFlopCards
+            uint8(game.players.length)
         );
+    }
+
+    function getGameCommunityCards(uint256 gameId) external view returns (uint256[] memory) {
+        GameState storage game = games[gameId];
+        uint256[] memory commCards = new uint256[](5);
+        for(uint8 i = 0; i < 5; i++) {
+            commCards[i] = uint256(game.communityCards[i]);
+        }
+        return commCards;
+    }
+
+    function getGamePlayerCards(uint256 gameId) external view returns (
+        uint256[] memory firstPlayerCards,
+        uint256[] memory secondPlayerCards
+    ) {
+        GameState storage game = games[gameId];
+        uint256[] memory firstCards = new uint256[](2);
+        uint256[] memory secondCards = new uint256[](2);
+        
+        for(uint8 i = 0; i < 2; i++) {
+            firstCards[i] = uint256(game.firstPlayerCards[i]);
+            secondCards[i] = uint256(game.secondPlayerCards[i]);
+        }
+        return (firstCards, secondCards);
+    }
+
+    function getGameEncryptedDeck(uint256 gameId) external view returns (uint256[] memory) {
+        GameState storage game = games[gameId];
+        if (game.encryptedDeck.length > 0) {
+            uint256[] memory encryptedDeckCopy = new uint256[](game.encryptedDeck.length);
+            for(uint256 i = 0; i < game.encryptedDeck.length; i++) {
+                encryptedDeckCopy[i] = game.encryptedDeck[i];
+            }
+            return encryptedDeckCopy;
+        }
+        return new uint256[](0);
+    }
+
+    function getGameFlopCards(uint256 gameId) external view returns (uint256[] memory) {
+        GameState storage game = games[gameId];
+        uint256[] memory flopCards = new uint256[](5);
+        for(uint8 i = 0; i < 5; i++) {
+            flopCards[i] = uint256(game.encryptedFlopCards[i]);
+        }
+        return flopCards;
     }
 
     function isFirstPlayer(address player) public view returns (bool) {
@@ -406,5 +535,13 @@ contract PokerGame {
         delete games[gameId].secondPlayerCards;
         delete games[gameId].encryptedFlopCards;
         games[gameId].encryptionSeed = 0;
+        
+        // Reset decryption status
+        games[gameId].hasDecryptedFlop[games[gameId].firstPlayer] = false;
+        games[gameId].hasDecryptedFlop[games[gameId].players[1].addr] = false;
+        games[gameId].hasDecryptedTurn[games[gameId].firstPlayer] = false;
+        games[gameId].hasDecryptedTurn[games[gameId].players[1].addr] = false;
+        games[gameId].hasDecryptedRiver[games[gameId].firstPlayer] = false;
+        games[gameId].hasDecryptedRiver[games[gameId].players[1].addr] = false;
     }
 }

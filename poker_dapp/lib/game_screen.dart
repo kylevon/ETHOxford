@@ -589,11 +589,11 @@ class BettingWidget extends StatefulWidget {
 }
 
 class _BettingWidgetState extends State<BettingWidget> {
-  final TextEditingController _betController = TextEditingController();
+  final TextEditingController _raiseController = TextEditingController();
   
   @override
   void dispose() {
-    _betController.dispose();
+    _raiseController.dispose();
     super.dispose();
   }
 
@@ -625,7 +625,7 @@ class _BettingWidgetState extends State<BettingWidget> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Current Bet: ${widget.currentBet.toString()} wei',
+            'Current Bet to Call: ${widget.currentBet.toString()} wei',
             style: const TextStyle(
               fontSize: 16,
             ),
@@ -634,10 +634,23 @@ class _BettingWidgetState extends State<BettingWidget> {
           Row(
             children: [
               Expanded(
+                child: ElevatedButton(
+                  onPressed: widget.isEnabled ? () {
+                    widget.onBet(widget.currentBet);
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  child: const Text('Call'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
                 child: TextField(
-                  controller: _betController,
+                  controller: _raiseController,
                   decoration: const InputDecoration(
-                    labelText: 'Bet Amount (wei)',
+                    labelText: 'Raise Amount (wei)',
                     border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.number,
@@ -645,29 +658,31 @@ class _BettingWidgetState extends State<BettingWidget> {
                 ),
               ),
               const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: widget.isEnabled ? () {
-                  final betAmount = BigInt.tryParse(_betController.text);
-                  if (betAmount == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a valid bet amount')),
-                    );
-                    return;
-                  }
-                  if (betAmount < widget.currentBet) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Bet must be at least the current bet amount')),
-                    );
-                    return;
-                  }
-                  widget.onBet(betAmount);
-                  _betController.clear();
-                } : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: widget.isEnabled ? () {
+                    final raiseAmount = BigInt.tryParse(_raiseController.text);
+                    if (raiseAmount == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a valid raise amount')),
+                      );
+                      return;
+                    }
+                    if (raiseAmount <= widget.currentBet) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Raise must be greater than the current bet')),
+                      );
+                      return;
+                    }
+                    widget.onBet(raiseAmount);
+                    _raiseController.clear();
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  ),
+                  child: const Text('Raise'),
                 ),
-                child: const Text('Place Bet'),
               ),
             ],
           ),
@@ -822,6 +837,105 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  Future<void> _handlePhaseAction() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      switch (_currentPhase) {
+        case 1: // First Player Encryption
+          if (_isFirstPlayer) {
+            final random = Random.secure();
+            final encryptedDeck = List<int>.generate(52, (i) => i)..shuffle(random);
+            await _contractInterface.submitEncryptedDeck(encryptedDeck);
+          }
+          break;
+
+        case 2: // Second Player Card Selection
+          // Handled by CardSelectionWidget
+          break;
+
+        case 3: // PreFlopBetting
+          if (_isFirstPlayer) {
+            final gameState = await _contractInterface.getGameState();
+            if (gameState != null && gameState['secondPlayerCards'] != null) {
+              final secondPlayerCards = (gameState['secondPlayerCards'] as List<dynamic>).cast<int>();
+              final players = gameState['players'] as List<dynamic>;
+              if (players.length > 1) {
+                final secondPlayerAddress = players[1]['addr'] as String;
+                await _contractInterface.decryptCards(secondPlayerCards, secondPlayerAddress);
+              }
+            }
+          }
+          break;
+
+        case 4: // FlopDealing
+          if (_isFirstPlayer) {
+            await _contractInterface.dealCommunityCards();
+          }
+          break;
+
+        // Flop Decryption Phases
+        case 5: // FlopDecryptionP1
+        case 6: // FlopDecryptionP2
+          final gameState = await _contractInterface.getGameState();
+          if (gameState != null && gameState['encryptedFlopCards'] != null) {
+            final flopCards = (gameState['encryptedFlopCards'] as List<dynamic>)
+                .take(3)
+                .cast<int>()
+                .toList();
+            await _contractInterface.decryptCommunityCards(flopCards);
+          }
+          break;
+
+        case 8: // TurnDealing
+          if (_isFirstPlayer) {
+            await _contractInterface.dealCommunityCards();
+          }
+          break;
+
+        // Turn Decryption Phases
+        case 9:  // TurnDecryptionP1
+        case 10: // TurnDecryptionP2
+          final gameState = await _contractInterface.getGameState();
+          if (gameState != null && gameState['encryptedFlopCards'] != null) {
+            final turnCard = [(gameState['encryptedFlopCards'] as List<dynamic>)[3] as int];
+            await _contractInterface.decryptCommunityCards(turnCard);
+          }
+          break;
+
+        case 12: // RiverDealing
+          if (_isFirstPlayer) {
+            await _contractInterface.dealCommunityCards();
+          }
+          break;
+
+        // River Decryption Phases
+        case 13: // RiverDecryptionP1
+        case 14: // RiverDecryptionP2
+          final gameState = await _contractInterface.getGameState();
+          if (gameState != null && gameState['encryptedFlopCards'] != null) {
+            final riverCard = [(gameState['encryptedFlopCards'] as List<dynamic>)[4] as int];
+            await _contractInterface.decryptCommunityCards(riverCard);
+          }
+          break;
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   Widget _buildActionButton() {
     if (!_isConnected || !_isInGame) return const SizedBox.shrink();
 
@@ -942,11 +1056,12 @@ class _GameScreenState extends State<GameScreen> {
       );
     }
 
-    // For dealing phases
-    if (_isDealingPhase(_currentPhase) && _isFirstPlayer) {
+    // For dealing and decryption phases
+    if ((_isDealingPhase(_currentPhase) && _isFirstPlayer) || 
+        _isDecryptionPhase(_currentPhase)) {
       return ElevatedButton(
         onPressed: _handlePhaseAction,
-        child: const Text('Deal Cards'),
+        child: Text(_isDealingPhase(_currentPhase) ? 'Deal Cards' : 'Decrypt Cards'),
       );
     }
 
@@ -954,84 +1069,17 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   bool _isBettingPhase(int phase) {
-    return phase == 3 || phase == 5 || phase == 7 || phase == 9;
+    return phase == 3 || phase == 6 || phase == 9 || phase == 12;
   }
 
   bool _isDealingPhase(int phase) {
-    return phase == 4 || phase == 6 || phase == 8;
+    return phase == 4 || phase == 7 || phase == 10;
   }
 
-  Future<void> _handlePhaseAction() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      switch (_currentPhase) {
-        case 1: // First Player Encryption
-          if (_isFirstPlayer) {
-            // Generate a random deck of 52 cards
-            final random = Random.secure();
-            final encryptedDeck = List<int>.generate(52, (i) => i)..shuffle(random);
-            await _contractInterface.submitEncryptedDeck(encryptedDeck);
-          }
-          break;
-        case 2: // Second Player Card Selection
-          if (!_isFirstPlayer) {
-            // This will be handled by the CardSelectionWidget
-            // The widget will call selectCards with the appropriate parameters
-          }
-          break;
-        case 3: // PreFlopBetting
-          if (_isFirstPlayer) {
-            // First player needs to decrypt second player's cards
-            final gameState = await _contractInterface.getGameState();
-            if (gameState != null && gameState['secondPlayerCards'] != null) {
-              final secondPlayerCards = (gameState['secondPlayerCards'] as List<dynamic>).cast<int>();
-              final secondPlayerAddress = gameState['players'][1]['addr'] as String;
-              await _contractInterface.decryptCards(secondPlayerCards, secondPlayerAddress);
-            }
-          }
-          final betAmount = BigInt.from(100000000000000000); // 0.1 ETH
-          await _contractInterface.placeBet(betAmount);
-          break;
-        case 4: // FlopDealing
-          if (_isFirstPlayer) {
-            // First player needs to decrypt their own cards
-            final gameState = await _contractInterface.getGameState();
-            if (gameState != null && gameState['firstPlayerCards'] != null) {
-              final firstPlayerCards = (gameState['firstPlayerCards'] as List<dynamic>).cast<int>();
-              await _contractInterface.decryptCards(firstPlayerCards, _contractInterface.currentAccount!);
-            }
-            await _contractInterface.dealCommunityCards();
-          }
-          break;
-        case 5: // FlopBetting
-        case 7: // TurnBetting
-        case 9: // RiverBetting
-          final betAmount = BigInt.from(100000000000000000); // 0.1 ETH
-          await _contractInterface.placeBet(betAmount);
-          break;
-        case 6: // TurnDealing
-        case 8: // RiverDealing
-          if (_isFirstPlayer) {
-            await _contractInterface.dealCommunityCards();
-          }
-          break;
-      }
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+  bool _isDecryptionPhase(int phase) {
+    return phase == 5 || phase == 6 || // Flop decryption (P1 and P2)
+           phase == 9 || phase == 10 || // Turn decryption (P1 and P2)
+           phase == 13 || phase == 14;  // River decryption (P1 and P2)
   }
 
   Future<void> _connectWallet() async {

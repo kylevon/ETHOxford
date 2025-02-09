@@ -58,23 +58,6 @@ class ContractInterface {
       print('Contract initialized with address: ${Config.contractAddress}');
       isInitialized = true;
 
-      // Test currentGameId call
-      try {
-        final gameIdFunction = contract!.function('currentGameId');
-        print('Found currentGameId function: ${gameIdFunction.name}');
-        final result = await web3client!.call(
-          contract: contract!,
-          function: gameIdFunction,
-          params: [],
-        );
-        if (result.isNotEmpty) {
-          final gameId = (result[0] as BigInt).toInt();
-          print('Current game ID: $gameId');
-        }
-      } catch (e) {
-        print('Error testing currentGameId: $e');
-      }
-
       // Check if player is already in game
       final isInGame = await isPlayerInGame(currentAccount!);
       if (isInGame) {
@@ -93,6 +76,7 @@ class ContractInterface {
       }
       final function = contract!.function('isPlayerInGame');
       final result = await web3client!.call(
+        sender: EthereumAddress.fromHex(currentAccount!),
         contract: contract!,
         function: function,
         params: [EthereumAddress.fromHex(address)],
@@ -116,6 +100,7 @@ class ContractInterface {
       final function = contract!.function('currentGameId');
       print('Calling function: ${function.name}');
       final result = await web3client!.call(
+        sender: EthereumAddress.fromHex(currentAccount!),
         contract: contract!,
         function: function,
         params: [],
@@ -221,32 +206,11 @@ class ContractInterface {
       }
       print('Current game ID before join: $gameId');
       
-      // Get game state to check phase
-      final gamesFunction = contract!.function('games');
-      final result = await web3client!.call(
-        contract: contract!,
-        function: gamesFunction,
-        params: [BigInt.from(gameId)],
-      );
-      
-      print('Raw game state before joining: $result');
-      print('Attempting to join with address: ${currentAccount!}');
-      
-      // Check if the game exists and is in joining phase
-      if (result.isEmpty) {
-        throw Exception('Game not found');
+      // Get number of players to check if game is full
+      final numPlayers = await getNumberOfPlayers(gameId);
+      if (numPlayers >= 2) {
+        throw Exception('Game is full');
       }
-      
-      final phase = result[4] is BigInt ? (result[4] as BigInt).toInt() : 0;
-      if (phase != 0) { // 0 = Joining phase
-        throw Exception('Game is not in joining phase');
-      }
-      
-      // Get current first player if any
-      final currentFirstPlayer = result[6] is EthereumAddress 
-          ? result[6] as EthereumAddress 
-          : EthereumAddress.fromHex('0x0000000000000000000000000000000000000000');
-      print('Current first player in game: ${currentFirstPlayer.hex}');
       
       print('Joining game with ID: $gameId');
       print('Buy-in amount: $buyInAmount');
@@ -521,16 +485,39 @@ class ContractInterface {
 
   Future<bool> dealCommunityCards() async {
     try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+
+      print('Dealing community cards for game $gameId');
+      
       final function = contract!.function('dealCommunityCards');
-      final result = await web3client!.sendTransaction(
+      final transaction = await web3client!.sendTransaction(
         credentials,
         Transaction.callContract(
           contract: contract!,
           function: function,
-          parameters: [],
+          parameters: [BigInt.from(gameId)],
         ),
         chainId: 31337,
       );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully dealt community cards with hash: ${receipt.transactionHash}');
       return true;
     } catch (e) {
       print('Error dealing community cards: $e');
@@ -635,47 +622,47 @@ class ContractInterface {
         return null;
       }
 
-      // Get game state using getGameState function
-      final function = contract!.function('getGameState');
-      print('Calling getGameState for game $playerGameId');
-      final result = await web3client!.call(
+      // Get basic game state
+      final basicStateFunction = contract!.function('getGameBasicState');
+      print('Getting game state for game $playerGameId');
+      final basicState = await web3client!.call(
         contract: contract!,
-        function: function,
+        function: basicStateFunction,
         params: [BigInt.from(playerGameId)],
       );
 
-      print('Raw result from getGameState: $result');
-      if (result.isEmpty) {
+      print('Raw result from getGameBasicState: $basicState');
+      if (basicState.isEmpty) {
         print('Empty result from contract call');
         return null;
       }
 
       try {
         // Convert all numeric values safely
-        List<int> convertToIntList(List<dynamic> list) {
-          return list.map((e) => e is BigInt ? e.toInt() : (e is int ? e : 0)).toList();
-        }
-
         int convertToInt(dynamic value) {
-          return value is BigInt ? value.toInt() : (value is int ? value : 0);
+          if (value is BigInt) return value.toInt();
+          if (value is int) return value;
+          if (value is String) return int.tryParse(value) ?? 0;
+          return 0;
         }
 
-        final communityCards = convertToIntList(result[0] as List<dynamic>);
-        final pot = result[1] as BigInt;
-        final currentBet = result[2] as BigInt;
-        final currentPlayer = convertToInt(result[3]);
-        final roundDeadline = result[4] as BigInt;
-        final phase = convertToInt(result[5]);
-        final firstPlayer = result[6] is EthereumAddress 
-            ? result[6] as EthereumAddress 
-            : EthereumAddress.fromHex(result[6].toString());
-        final lastBetAmount = result[7] as BigInt;
-        final communityCardsDealt = convertToInt(result[8]);
-        final numPlayers = convertToInt(result[9]);
+        // Explicitly handle uint8 values
+        int convertToUint8(dynamic value) {
+          final intValue = convertToInt(value);
+          return intValue & 0xFF; // Ensure value is in uint8 range
+        }
 
-        // Get player cards
-        final firstPlayerCards = result.length > 11 ? convertToIntList(result[11] as List<dynamic>) : [];
-        final secondPlayerCards = result.length > 12 ? convertToIntList(result[12] as List<dynamic>) : [];
+        final pot = basicState[0] as BigInt;
+        final currentBet = basicState[1] as BigInt;
+        final currentPlayer = convertToUint8(basicState[2]);
+        final roundDeadline = basicState[3] as BigInt;
+        final phase = convertToUint8(basicState[4]);
+        final firstPlayer = basicState[5] is String 
+            ? EthereumAddress.fromHex(basicState[5].toString())
+            : basicState[5] as EthereumAddress;
+        final lastBetAmount = basicState[6] as BigInt;
+        final communityCardsDealt = convertToUint8(basicState[7]);
+        final numPlayers = convertToUint8(basicState[8]);
 
         // Get first player status
         final isFirstPlayerResult = await isFirstPlayer(currentAccount!);
@@ -683,6 +670,54 @@ class ContractInterface {
         print('First player in game $playerGameId: ${firstPlayer.hex}');
         print('Current player (${currentAccount!}) is first player: $isFirstPlayerResult');
         print('Number of players: $numPlayers');
+        print('Game phase: ${await getPhaseText(phase)}');
+
+        // Get community cards
+        final communityCardsFunction = contract!.function('getGameCommunityCards');
+        final communityCardsResult = await web3client!.call(
+          contract: contract!,
+          function: communityCardsFunction,
+          params: [BigInt.from(playerGameId)],
+        );
+        final communityCards = (communityCardsResult[0] as List<dynamic>)
+            .map((e) => convertToInt(e))
+            .toList();
+
+        // Get player cards
+        final playerCardsFunction = contract!.function('getGamePlayerCards');
+        final playerCardsResult = await web3client!.call(
+          contract: contract!,
+          function: playerCardsFunction,
+          params: [BigInt.from(playerGameId)],
+        );
+        final firstPlayerCards = (playerCardsResult[0] as List<dynamic>)
+            .map((e) => convertToInt(e))
+            .toList();
+        final secondPlayerCards = (playerCardsResult[1] as List<dynamic>)
+            .map((e) => convertToInt(e))
+            .toList();
+
+        // Get encrypted deck
+        final encryptedDeckFunction = contract!.function('getGameEncryptedDeck');
+        final encryptedDeckResult = await web3client!.call(
+          contract: contract!,
+          function: encryptedDeckFunction,
+          params: [BigInt.from(playerGameId)],
+        );
+        final encryptedDeck = (encryptedDeckResult[0] as List<dynamic>)
+            .map((e) => e as BigInt)
+            .toList();
+
+        // Get flop cards
+        final flopCardsFunction = contract!.function('getGameFlopCards');
+        final flopCardsResult = await web3client!.call(
+          contract: contract!,
+          function: flopCardsFunction,
+          params: [BigInt.from(playerGameId)],
+        );
+        final flopCards = (flopCardsResult[0] as List<dynamic>)
+            .map((e) => convertToInt(e))
+            .toList();
 
         return {
           'gameId': playerGameId,
@@ -698,11 +733,13 @@ class ContractInterface {
           'numPlayers': numPlayers,
           'isFirstPlayer': isFirstPlayerResult,
           'firstPlayerCards': firstPlayerCards,
-          'secondPlayerCards': secondPlayerCards
+          'secondPlayerCards': secondPlayerCards,
+          'encryptedDeck': encryptedDeck,
+          'encryptedFlopCards': flopCards
         };
       } catch (e) {
         print('Error parsing game state: $e');
-        print('Raw result was: $result');
+        print('Raw result was: $basicState');
         return null;
       }
     } catch (e, stackTrace) {
@@ -757,16 +794,28 @@ class ContractInterface {
       case 4:
         return 'Flop Dealing';
       case 5:
-        return 'Flop Betting';
+        return 'Flop Decryption (Player 1)';
       case 6:
-        return 'Turn Dealing';
+        return 'Flop Decryption (Player 2)';
       case 7:
-        return 'Turn Betting';
+        return 'Flop Betting';
       case 8:
-        return 'River Dealing';
+        return 'Turn Dealing';
       case 9:
-        return 'River Betting';
+        return 'Turn Decryption (Player 1)';
       case 10:
+        return 'Turn Decryption (Player 2)';
+      case 11:
+        return 'Turn Betting';
+      case 12:
+        return 'River Dealing';
+      case 13:
+        return 'River Decryption (Player 1)';
+      case 14:
+        return 'River Decryption (Player 2)';
+      case 15:
+        return 'River Betting';
+      case 16:
         return 'Showdown';
       default:
         return 'Unknown Phase';
@@ -791,6 +840,84 @@ class ContractInterface {
     } catch (e) {
       print('Error checking if player is first player: $e');
       return false;
+    }
+  }
+
+  Future<bool> decryptCommunityCards(List<int> decryptedCards) async {
+    try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+      
+      final gameId = await getPlayerGameId(currentAccount!);
+      if (gameId == 0) {
+        throw Exception('No active game found');
+      }
+
+      final gameState = await getGameState();
+      if (gameState == null) {
+        throw Exception('Could not get game state');
+      }
+
+      final phase = gameState['phase'] as int;
+      String phaseText = '';
+      if (phase == 5) phaseText = 'flop';
+      else if (phase == 8) phaseText = 'turn';
+      else if (phase == 11) phaseText = 'river';
+      else throw Exception('Not in a decryption phase');
+
+      print('Decrypting $phaseText cards: $decryptedCards');
+      
+      final function = contract!.function('decryptCommunityCards');
+      final transaction = await web3client!.sendTransaction(
+        credentials,
+        Transaction.callContract(
+          contract: contract!,
+          function: function,
+          parameters: [BigInt.from(gameId), decryptedCards.map((i) => BigInt.from(i)).toList()],
+        ),
+        chainId: 31337,
+      );
+      
+      // Wait for transaction to be mined
+      print('Waiting for transaction receipt...');
+      TransactionReceipt? receipt;
+      do {
+        receipt = await web3client!.getTransactionReceipt(transaction);
+        if (receipt == null) {
+          await Future.delayed(const Duration(seconds: 1));
+        }
+      } while (receipt == null);
+      
+      print('Successfully decrypted $phaseText cards with hash: ${receipt.transactionHash}');
+      return true;
+    } catch (e) {
+      print('Error decrypting community cards: $e');
+      throw Exception('Failed to decrypt community cards: $e');
+    }
+  }
+
+  Future<int> getNumberOfPlayers(int gameId) async {
+    try {
+      if (!isInitialized) {
+        throw Exception('Contract not initialized');
+      }
+
+      final function = contract!.function('getNumberOfPlayers');
+      final result = await web3client!.call(
+        contract: contract!,
+        function: function,
+        params: [BigInt.from(gameId)],
+      );
+
+      if (result.isEmpty) {
+        return 0;
+      }
+
+      return (result[0] as BigInt).toInt();
+    } catch (e) {
+      print('Error getting number of players: $e');
+      return 0;
     }
   }
 } 
