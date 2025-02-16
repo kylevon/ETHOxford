@@ -11,6 +11,10 @@ A fully on-chain, trustless poker game built on Ethereum where players can engag
 - **Real-time Updates**: Flutter-based UI with real-time game state updates
 - **Fair Gaming**: Provably fair gameplay with all actions recorded on the blockchain
 
+## Demo & Pitch
+
+Our pitch deck, which includes a demo video, can be accessed [here](https://www.canva.com/design/DAGegjaThjU/_942RLOhgNFEFAwQYnpMUQ/view?utm_content=DAGegjaThjU&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h4529bb1b1a).
+
 ## 🏗 Architecture
 
 The project consists of two main components:
